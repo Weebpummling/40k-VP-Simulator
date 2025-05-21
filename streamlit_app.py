@@ -3,133 +3,151 @@ import pandas as pd
 import numpy as np
 import random
 
-st.title("Mission Card VP Simulator")
+st.set_page_config(page_title="40K VP Simulator", layout="wide")
+st.title("40K Mission Card VP Simulator")
 
-template = {
-    "Card": [
-        "Assassination", "Containment", "Containment", "Behind Enemy Lines", "Behind Enemy Lines",
-        "Marked for Death", "Bring it Down", "Bring it Down", "Bring it Down", "Bring it Down",
-        "No Prisoners", "No Prisoners", "No Prisoners", "Defend Stronghold",
-        "Storm Hostile Objective", "Sabotage", "Sabotage", "Cull the Horde",
-        "Overwhelming Force", "Overwhelming Force", "Extend Battlelines",
-        "Recover Assets", "Recover Assets", "Engage on All Fronts", "Engage on All Fronts",
-        "Area Denial", "Area Denial", "Secure No Man's Land", "Secure No Man's Land",
-        "Cleanse", "Cleanse", "Establish Locus", "Establish Locus"
-    ],
-    "Points": [
-        5, 3, 6, 3, 4,
-        5, 2, 4, 6, 8,
-        2, 4, 5, 3,
-        4, 3, 6, 5,
-        3, 5, 5,
-        3, 6, 2, 4,
-        2, 5, 2, 5,
-        2, 4, 2, 4
-    ],
-    "P(R1)": [0.2, 1, 1, 0, 0, 0, 0, 0.4, 0.1, 0.05, 0.2, 0, 0, 0, 0, 1, 0, 0, 0.1, 0, 1, 1, 0, 0.8, 0, 1, 0.8, 1, 1, 1, 1, 0.7, 1, 0],
-    "P(R2)": [0.3, 1, 1, 0.2, 0, 0, 0.5, 0.4, 0, 0.7, 0.8, 0.6, 0.6, 1, 0.6, 0.9, 0, 0, 0.7, 0.3, 1, 0.8, 0, 0.3, 0.3, 0.7, 0.8, 1, 0.8, 1, 0.7, 0.8, 0],
-    "P(R3)": [0.5, 1, 0.7, 0.3, 0.2, 0.2, 0.6, 0.5, 0.1, 0.05, 0.9, 0.7, 0.7, 1, 0.7, 0.8, 0, 0, 0.7, 0.7, 1, 0.7, 0.2, 0.5, 0.4, 0.5, 0.8, 1, 0.7, 1, 0.7, 0.8, 0.4],
-    "P(R4)": [0.7, 1, 0.6, 0.6, 0.5, 0.3, 0.7, 0.6, 0, 0, 0.9, 0.8, 0.8, 1, 0.8, 0.7, 0, 0.2, 0.8, 0.8, 0.9, 0.6, 0.3, 0.7, 0.5, 0.7, 0.8, 1, 0.7, 1, 0.7, 0.8, 0.5],
-    "P(R5)": [0.8, 1, 0.5, 0.6, 0.6, 0.5, 0.8, 0.7, 0, 0, 0.9, 0.8, 0.75, 1, 0.6, 0.6, 0.1, 0.3, 0.8, 0.7, 0.9, 0.6, 0.3, 0.6, 0.6, 0.7, 0.8, 1, 0.7, 1, 0.7, 0.8, 0.7]
+st.markdown("""
+Edit the probability table below. Each row represents one (Card, Points) event and its **P(R1)**–**P(R5)** scoring chances.  
+""")
+
+# 1) Define all mission events
+card_events = {
+    "Assassination": [(5, [0.2, 0.3, 0.5, 0.7, 0.8])],
+    "Containment":   [(3, [1.0, 1.0, 1.0, 1.0, 1.0]),
+                       (6, [1.0, 1.0, 0.7, 0.6, 0.5])],
+    "Behind Enemy Lines": [(3, [0,   0.2, 0.3, 0.6, 0.6]),
+                            (4, [0,   0,   0.2, 0.5, 0.6])],
+    "Marked for Death":    [(5, [0,   0,   0.2, 0.3, 0.5])],
+    "Bring it Down":       [(2, [0,   0.5, 0.6, 0.7, 0.8]),
+                            (4, [0,   0.4, 0.5, 0.6, 0.7]),
+                            (6, [0,   0.1, 0.1, 0.0, 0.0]),
+                            (8, [0,   0.05,0.05,0.0, 0.0])],
+    "No Prisoners":        [(2, [0.2, 0.8, 0.9, 0.9, 0.9]),
+                            (4, [0,   0.6, 0.7, 0.8, 0.8]),
+                            (5, [0,   0.6, 0.7, 0.8, 0.75])],
+    "Defend Stronghold":   [(3, [0,   1.0, 1.0, 1.0, 1.0])],
+    "Storm Hostile Objective": [(4, [0, 0.6, 0.7, 0.8, 0.6])],
+    "Sabotage":            [(3, [1.0, 0.9, 0.8, 0.7, 0.6]),
+                            (6, [0,   0.0, 0.0, 0.0, 0.1])],
+    "Cull the Horde":      [(5, [0,   0.0, 0.0, 0.2, 0.3])],
+    "Overwhelming Force":  [(3, [0.1, 0.7, 0.7, 0.8, 0.8]),
+                            (5, [0,   0.3, 0.7, 0.8, 0.7])],
+    "Extend Battlelines":  [(5, [1.0, 1.0, 1.0, 0.9, 0.9])],
+    "Recover Assets":      [(3, [1.0, 0.8, 0.7, 0.6, 0.6]),
+                            (6, [0,   0.0, 0.2, 0.3, 0.3])],
+    "Engage on All Fronts":[(2, [0.8, 0.3, 0.5, 0.7, 0.8]),
+                            (4, [0,   0.3, 0.4, 0.5, 0.6])],
+    "Area Denial":         [(2, [1.0, 0.8, 0.8, 0.8, 0.8]),
+                            (5, [0.8, 0.7, 0.7, 0.7, 0.7])],
+    "Secure No Man's Land":[(2, [1.0, 1.0, 1.0, 1.0, 1.0]),
+                            (5, [0.8, 0.8, 0.7, 0.7, 0.7])],
+    "Cleanse":             [(2, [1.0, 1.0, 1.0, 1.0, 1.0]),
+                            (4, [0.7, 0.7, 0.7, 0.7, 0.7])],
+    "Establish Locus":     [(2, [1.0, 0.8, 0.8, 0.8, 0.8]),
+                            (4, [0.0, 0.0, 0.4, 0.5, 0.7])],
 }
 
-df = pd.DataFrame(template)
+# 2) Build a uniform DataFrame from these events
+rows = []
+for card, events in card_events.items():
+    for pts, probs in events:
+        rows.append({
+            "Card": card,
+            "Points": pts,
+            "P(R1)": probs[0],
+            "P(R2)": probs[1],
+            "P(R3)": probs[2],
+            "P(R4)": probs[3],
+            "P(R5)": probs[4],
+        })
+df = pd.DataFrame(rows)
 
-# Let user edit or upload
-uploaded = st.file_uploader("Upload CSV", type="csv")
-if uploaded:
-    df = pd.read_csv(uploaded)
+# 3) Let the user edit probabilities in-place
+edited = st.data_editor(df, num_rows="dynamic", key="prob-table")
 
-edited = st.data_editor(df)
-
-# Parse events
+# 4) Parse back into card_events structure
 card_events = {}
 for _, row in edited.iterrows():
     card = row["Card"]
-    pts = float(row["Points"])
-    probs = [float(row[f"P(R{i})"]) for i in range(1,6)]
+    pts  = float(row["Points"])
+    probs = [row[f"P(R{i})"] for i in range(1,6)]
     card_events.setdefault(card, []).append((pts, probs))
 
+# 5) Sidebar controls
 st.sidebar.header("Simulation Settings")
-n_trials = st.sidebar.number_input("Trials", value=30000, min_value=1000, step=1000)
-reshape_r1 = st.sidebar.checkbox("Apply Round-1 Reshuffle Rule", value=True)
-allow_discard = st.sidebar.checkbox("Allow One-Card Discard/Redraw", value=True)
+n_trials     = st.sidebar.number_input("Monte-Carlo Trials", value=30000, min_value=1000, step=1000)
+reshuffle_r1 = st.sidebar.checkbox("Apply Round-1 Reshuffle Rule", value=True)
+allow_discard= st.sidebar.checkbox("Allow One-Card Discard/Redraw", value=True)
 
-# Constants
+# Round-1 forbidden cards
 forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
-# Precompute EV
+# Precompute EV lookup
 card_ev = {
     c: [sum(pts * probs[r] for pts, probs in evs) for r in range(5)]
     for c, evs in card_events.items()
 }
 
-# Simulation
+# 6) Run simulation
 scores = np.zeros((n_trials, 5))
-for i in range(n_trials):
+for t in range(n_trials):
     discards = set()
     for r in range(5):
-        # available deck
+        # build draw pool
         pool = [c for c in card_events if c not in discards]
-        if r == 0 and reshape_r1:
+        if r == 0 and reshuffle_r1:
             pool = [c for c in pool if c not in forbidden_r1]
         draw = random.sample(pool, 2)
-        
-        # optional discard
+
+        # optional discard/redraw
         if allow_discard:
             evs = [card_ev[c][r] for c in draw]
-            remainder = [c for c in pool if c not in draw]
-            rep_ev = np.mean([card_ev[c][r] for c in remainder])
+            rest = [c for c in pool if c not in draw]
+            rep_ev = np.mean([card_ev[c][r] for c in rest])
             if rep_ev > min(evs):
-                # discard lowest EV
-                discard = draw[evs.index(min(evs))]
-                discards.add(discard)
-                kept = draw[1 - evs.index(min(evs))]
-                new = random.choice(remainder)
-                hand = [kept, new]
-            else:
-                hand = draw
-        else:
-            hand = draw
-        
+                idx = evs.index(min(evs))
+                discards.add(draw[idx])
+                kept = draw[1 - idx]
+                draw = [kept, random.choice(rest)]
+
         # scoring
         pts = 0
-        for c in hand:
+        for c in draw:
             for p, probs in card_events[c]:
                 if random.random() < probs[r]:
                     pts += p
-        scores[i, r] = pts
+        scores[t, r] = pts
 
-# Results
+# 7) Show results
 exp_vp = scores.mean(axis=0)
 df_result = pd.DataFrame({
-    "Round": [f"Round {i+1}" for i in range(5)],
-    "Expected VP": exp_vp
+    "Round":           [f"Round {i+1}" for i in range(5)],
+    "Expected VP":     np.round(exp_vp, 4)
 })
-st.subheader("Expected VP by Round")
-st.dataframe(df_result)
 
-# If with discard and without discard comparison
+st.subheader("Expected VP by Round")
+st.dataframe(df_result, use_container_width=True)
+
 if allow_discard:
-    # Rerun without discard
-    scores_no = np.zeros((n_trials, 5))
-    for i in range(n_trials):
+    # also compute no‐discard baseline
+    scores_nd = np.zeros_like(scores)
+    for t in range(n_trials):
         for r in range(5):
-            pool = [c for c in card_events]
-            if r == 0 and reshape_r1:
+            pool = list(card_events.keys())
+            if r == 0 and reshuffle_r1:
                 pool = [c for c in pool if c not in forbidden_r1]
-            draw = random.sample(pool, 2)
+            hand = random.sample(pool, 2)
             pts = 0
-            for c in draw:
+            for c in hand:
                 for p, probs in card_events[c]:
                     if random.random() < probs[r]:
                         pts += p
-            scores_no[i, r] = pts
-    exp_no = scores_no.mean(axis=0)
-    df_compare = pd.DataFrame({
-        "Round": [f"Round {i+1}" for i in range(5)],
-        "With Discard": exp_vp,
-        "No Discard": exp_no
+            scores_nd[t, r] = pts
+    nd = scores_nd.mean(axis=0)
+    df_cmp = pd.DataFrame({
+        "Round":          [f"Round {i+1}" for i in range(5)],
+        "With Discard":   np.round(exp_vp,4),
+        "Without Discard":np.round(nd,4),
     })
-    st.subheader("Comparison: With vs. Without Discard")
-    st.dataframe(df_compare)
+    st.subheader("With vs. Without Discard")
+    st.dataframe(df_cmp, use_container_width=True)
