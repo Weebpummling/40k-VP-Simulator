@@ -8,7 +8,7 @@ st.title("40K Mission Card VP Simulator")
 
 st.markdown("""
 Edit the probability table below. Each row represents one (Card, Points) event 
-and its **P(R1)**–**P(R5)** scoring chances. Cards now only ever score *one* event per draw.
+and its **P(R1)**–**P(R5)** scoring chances. Cards score at most one event per draw.
 """)
 
 # 1) Define all mission events
@@ -35,7 +35,7 @@ card_events = {
     "Area Denial":         [(2, [1,0.8,0.8,0.8,0.8]), (5, [0.8,0.7,0.7,0.7,0.7])],
     "Secure No Man's Land":[(2, [1,1,1,1,1]), (5, [0.8,0.8,0.7,0.7,0.7])],
     "Cleanse":             [(2, [1,1,1,1,1]), (4, [0.7,0.7,0.7,0.7,0.7])],
-    "Establish Locus":     [(2, [1,0.8,0.8,0.8,0.8]), (4, [0,0,0.4,0.5,0.7])],
+    "Establish Locus":     [(2, [1,0.8,0.8,0.8,0.8]), (4, [0,0,0.4,0.5,0.7])]
 }
 
 # 2) Build a uniform DataFrame
@@ -62,9 +62,9 @@ for _, row in edited.iterrows():
 
 # Sidebar controls
 st.sidebar.header("Simulation Settings")
-n_trials     = st.sidebar.number_input("Monte Carlo Trials", 1000, 100000, 30000, 1000)
-reshuffle_r1 = st.sidebar.checkbox("Apply Round-1 Reshuffle Rule", True)
-allow_discard= st.sidebar.checkbox("Allow One-Card Discard/Redraw", True)
+n_trials      = st.sidebar.number_input("Monte Carlo Trials", 1000, 100000, 30000, 1000)
+reshuffle_r1  = st.sidebar.checkbox("Apply Round-1 Reshuffle Rule", True)
+allow_discard = st.sidebar.checkbox("Allow One-Card Discard/Redraw", True)
 
 # Round-1 exclusions
 forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
@@ -72,12 +72,10 @@ forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Li
 # 5) Compute exclusive-EV lookup
 card_ev = {}
 for c, evs in card_events.items():
-    # sort descending by VP
     sorted_evs = sorted(evs, key=lambda x: x[0], reverse=True)
     ev_list = []
     for r in range(5):
-        rem = 1.0
-        ev = 0.0
+        rem, ev = 1.0, 0.0
         for pts, probs in sorted_evs:
             pr = probs[r]
             ev += pts * pr * rem
@@ -85,18 +83,27 @@ for c, evs in card_events.items():
         ev_list.append(ev)
     card_ev[c] = ev_list
 
-# 6) Monte Carlo
+# 6) Determine optimal redraw candidates
+cards_to_redraw = {}
+for r in range(5):
+    avail = [c for c in card_ev if not (r == 0 and reshuffle_r1 and c in forbidden_r1)]
+    avg_ev = np.mean([card_ev[c][r] for c in avail])
+    cards_to_redraw[f"Round {r+1}"] = [c for c in avail if card_ev[c][r] < avg_ev]
+df_redraw = pd.DataFrame({
+    "Round": list(cards_to_redraw.keys()),
+    "Cards to Redraw": [", ".join(cards_to_redraw[r]) for r in cards_to_redraw]
+})
+
+# 7) Run simulation
 scores = np.zeros((n_trials, 5))
 for t in range(n_trials):
     discards = set()
     for r in range(5):
-        # available pool
         pool = [c for c in card_events if c not in discards]
         if r == 0 and reshuffle_r1:
             pool = [c for c in pool if c not in forbidden_r1]
         draw = random.sample(pool, 2)
 
-        # optional discard
         if allow_discard:
             evs = [card_ev[c][r] for c in draw]
             rem = [c for c in pool if c not in draw]
@@ -106,17 +113,15 @@ for t in range(n_trials):
                 discards.add(draw[idx])
                 draw[idx] = random.choice(rem)
 
-        # score each card once
         pts = 0
         for c in draw:
-            # try highest→lowest
             for p, probs in sorted(card_events[c], key=lambda x: x[0], reverse=True):
                 if random.random() < probs[r]:
                     pts += p
                     break
         scores[t, r] = pts
 
-# 7) Results
+# 8) Show results
 exp_vp = scores.mean(axis=0)
 df_result = pd.DataFrame({
     "Round":       [f"Round {i+1}" for i in range(5)],
@@ -126,8 +131,11 @@ df_result = pd.DataFrame({
 st.subheader("Expected VP by Round")
 st.dataframe(df_result, use_container_width=True)
 
-# 8) If discard is on, show no-discard baseline
+st.subheader("Cards to Redraw by Round")
+st.dataframe(df_redraw, use_container_width=True)
+
 if allow_discard:
+    # no-discard baseline
     scores_nd = np.zeros_like(scores)
     for t in range(n_trials):
         for r in range(5):
@@ -144,9 +152,9 @@ if allow_discard:
             scores_nd[t, r] = pts
     nd = scores_nd.mean(axis=0)
     df_cmp = pd.DataFrame({
-        "Round":           [f"Round {i+1}" for i in range(5)],
-        "With Discard":    np.round(exp_vp,4),
-        "Without Discard": np.round(nd,   4),
+        "Round":            [f"Round {i+1}" for i in range(5)],
+        "With Discard":     np.round(exp_vp, 4),
+        "Without Discard":  np.round(nd,   4),
     })
-    st.subheader("With vs Without Discard")
+    st.subheader("With vs. Without Discard")
     st.dataframe(df_cmp, use_container_width=True)
