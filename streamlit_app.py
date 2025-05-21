@@ -32,7 +32,7 @@ uploaded = st.file_uploader("Upload CSV", type="csv")
 if uploaded:
     df = pd.read_csv(uploaded)
 
-edited = st.experimental_data_editor(df)
+edited = st.data_editor(df)
 
 # Parse events
 card_events = {}
