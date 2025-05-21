@@ -144,7 +144,7 @@ df_result = pd.DataFrame({
 st.subheader("Expected VP by Round")
 st.dataframe(df_result, use_container_width=True)
 
-st.subheader("Cards to Redraw by Round")
+st.subheader("Cards to Redraw by Round Based on Probabilities of Scoring Including Future Turns")
 st.dataframe(df_redraw, use_container_width=True)
 
 # comparison with no-discard baseline if requested
