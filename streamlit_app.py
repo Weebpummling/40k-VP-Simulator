@@ -5,15 +5,6 @@ import random
 
 st.title("Mission Card VP Simulator")
 
-st.markdown("""
-Upload or edit your card probability data below.  
-**Format**: Each row is one scoring event:  
-- **Card**: card name  
-- **Points**: victory points for this event  
-- **P(R1)** … **P(R5)**: probability to score this point value in each round  
-""")
-
-# Sample template (user can edit or upload CSV)
 template = {
     "Card": [
         "Assassination", "Containment", "Containment", "Behind Enemy Lines", "Behind Enemy Lines",
@@ -44,26 +35,27 @@ template = {
 
 df = pd.DataFrame(template)
 
-uploaded_file = st.file_uploader("Upload CSV", type="csv")
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+# Let user edit or upload
+uploaded = st.file_uploader("Upload CSV", type="csv")
+if uploaded:
+    df = pd.read_csv(uploaded)
 
-edited = st.data_editor(df, num_rows="dynamic")
+edited = st.data_editor(df)
 
 # Parse events
 card_events = {}
 for _, row in edited.iterrows():
     card = row["Card"]
     pts = float(row["Points"])
-    probs = [row[f"P(R{i})"] for i in range(1,6)]
+    probs = [float(row[f"P(R{i})"]) for i in range(1,6)]
     card_events.setdefault(card, []).append((pts, probs))
 
 st.sidebar.header("Simulation Settings")
 n_trials = st.sidebar.number_input("Trials", value=30000, min_value=1000, step=1000)
-reshape_r1 = st.sidebar.checkbox("Apply Round-1 Reshuffle", True)
-allow_discard = st.sidebar.checkbox("Allow Discard + Redraw", True)
+reshape_r1 = st.sidebar.checkbox("Apply Round-1 Reshuffle Rule", value=True)
+allow_discard = st.sidebar.checkbox("Allow One-Card Discard/Redraw", value=True)
 
-# Round-1 exclusions
+# Constants
 forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
 # Precompute EV
@@ -74,28 +66,39 @@ card_ev = {
 
 # Simulation
 scores = np.zeros((n_trials, 5))
-for t in range(n_trials):
+for i in range(n_trials):
     discards = set()
     for r in range(5):
+        # available deck
         pool = [c for c in card_events if c not in discards]
         if r == 0 and reshape_r1:
             pool = [c for c in pool if c not in forbidden_r1]
         draw = random.sample(pool, 2)
+        
+        # optional discard
         if allow_discard:
             evs = [card_ev[c][r] for c in draw]
-            rem = [c for c in pool if c not in draw]
-            rep_ev = np.mean([card_ev[c][r] for c in rem])
+            remainder = [c for c in pool if c not in draw]
+            rep_ev = np.mean([card_ev[c][r] for c in remainder])
             if rep_ev > min(evs):
-                idx = evs.index(min(evs))
-                discards.add(draw[idx])
-                kept = draw[1-idx]
-                draw = [kept, random.choice(rem)]
+                # discard lowest EV
+                discard = draw[evs.index(min(evs))]
+                discards.add(discard)
+                kept = draw[1 - evs.index(min(evs))]
+                new = random.choice(remainder)
+                hand = [kept, new]
+            else:
+                hand = draw
+        else:
+            hand = draw
+        
+        # scoring
         pts = 0
-        for c in draw:
+        for c in hand:
             for p, probs in card_events[c]:
                 if random.random() < probs[r]:
                     pts += p
-        scores[t,r] = pts
+        scores[i, r] = pts
 
 # Results
 exp_vp = scores.mean(axis=0)
@@ -106,26 +109,27 @@ df_result = pd.DataFrame({
 st.subheader("Expected VP by Round")
 st.dataframe(df_result)
 
+# If with discard and without discard comparison
 if allow_discard:
-    # Compare no-discard
+    # Rerun without discard
     scores_no = np.zeros((n_trials, 5))
-    for t in range(n_trials):
+    for i in range(n_trials):
         for r in range(5):
-            pool = list(card_events.keys())
+            pool = [c for c in card_events]
             if r == 0 and reshape_r1:
                 pool = [c for c in pool if c not in forbidden_r1]
             draw = random.sample(pool, 2)
-            pts=0
+            pts = 0
             for c in draw:
                 for p, probs in card_events[c]:
                     if random.random() < probs[r]:
-                        pts+=p
-            scores_no[t,r]=pts
+                        pts += p
+            scores_no[i, r] = pts
     exp_no = scores_no.mean(axis=0)
     df_compare = pd.DataFrame({
         "Round": [f"Round {i+1}" for i in range(5)],
         "With Discard": exp_vp,
         "No Discard": exp_no
     })
-    st.subheader("With vs. Without Discard")
+    st.subheader("Comparison: With vs. Without Discard")
     st.dataframe(df_compare)
