@@ -6,13 +6,11 @@ import pandas as pd
 # ─────────────────────────────────────────────────────────────────────────────
 # 0) Starting bonus
 # ─────────────────────────────────────────────────────────────────────────────
-
 START_VP = 10  # everyone starts with 10 free VPs
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1) Helper functions
 # ─────────────────────────────────────────────────────────────────────────────
-
 def compute_ev(events):
     """Compute EV per round for mission cards (pts × pct/100)."""
     return [
@@ -31,7 +29,6 @@ def score_card(events, round_idx):
 # ─────────────────────────────────────────────────────────────────────────────
 # 2) Base card definitions
 # ─────────────────────────────────────────────────────────────────────────────
-
 BASE_CARDS = {
     "Assassination":          {"initial": (5, [20,30,50,70,80]),       "additional": None},
     "Containment":            {"initial": (3, [100,100,100,100,100]),  "additional": (3, [100,100,70,60,50])},
@@ -53,28 +50,28 @@ BASE_CARDS = {
     "Establish Locus":        {"initial": (2, [100,80,80,80,80]),      "additional": (2, [0,0,40,50,70])},
 }
 
-round_labels   = [f"Round {i+1}" for i in range(5)]
-forbidden_r1   = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
+round_labels = [f"Round {i+1}" for i in range(5)]
+forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3) CP Tracker
 # ─────────────────────────────────────────────────────────────────────────────
-
 st.header("🛡️ Command Points Tracker")
 cpg, cps = st.columns(2)
 cp_gained = cpg.number_input("CP Gained", min_value=0, value=0, step=1)
 cp_spent  = cps.number_input("CP Spent",  min_value=0, value=0, step=1)
 st.metric("Net CP", cp_gained - cp_spent)
 
+# Placeholder for projected totals
+proj_placeholder = st.container()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 4) Live Scoreboard & Cards Used
 # ─────────────────────────────────────────────────────────────────────────────
-
 st.header("📋 Live Scoreboard & Cards Used")
 st.markdown(
     "🔎 **Note:** Enter completed **Secondary Scores** to exclude those rounds "
-    "from future simulations. **Primary Scores** are for reference only—"
-    "they do *not* exclude rounds."
+    "from future simulations. **Primary Scores** are for reference only."
 )
 
 secondary_scores = {}
@@ -85,10 +82,10 @@ for i in range(1, 6):
     st.subheader(f"Round {i}")
     c1, c2, c3 = st.columns([2,2,4])
     secondary_scores[i] = c1.number_input(
-        f"Secondary Score R{i}", min_value=0, value=0, step=1, key=f"sec_{i}"
+        f"Secondary Score R{i}", min_value=0, value=0, key=f"sec_{i}"
     )
     primary_scores[i] = c2.number_input(
-        f"Primary Score R{i}",   min_value=0, value=0, step=1, key=f"pri_{i}"
+        f"Primary Score R{i}",   min_value=0, value=0, key=f"pri_{i}"
     )
     used = c3.multiselect(
         f"Cards used in R{i} (remove from pool)",
@@ -106,13 +103,12 @@ t1.metric("Starting Bonus VP", START_VP)
 t2.metric("Secondary Total",    sec_total)
 t3.metric("Primary Total",      pri_total)
 
-# Determine future rounds to simulate (exclude only if secondary_score > 0)
+# Determine future rounds to simulate (exclude if secondary_score > 0)
 included_idx = [i-1 for i in range(1,6) if secondary_scores[i] == 0]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5) Mission Cards Input
+# 5) Your Mission Cards Input
 # ─────────────────────────────────────────────────────────────────────────────
-
 st.header("🎯 Your Mission Cards")
 
 categories = [
@@ -134,7 +130,7 @@ mapping = {
 
 available_cards = [c for c in BASE_CARDS if c not in removed_cards_all]
 selected = st.multiselect(
-    "Select cards to include and remove unscorable cards!",
+    "Select cards to include",
     options=available_cards,
     default=available_cards
 )
@@ -146,32 +142,23 @@ for card in selected:
     st.markdown(f"**{card}** — Initial VP: {cfg['initial'][0]}")
     cols = st.columns(5)
     probs = [
-        mapping[cols[j].selectbox(
-            f"R{j+1} chance",
-            options=categories,
-            index=3,
-            key=f"{card}_init_{j}"
-        )] for j in range(5)
+        mapping[cols[j].selectbox(f"R{j+1} chance", categories, index=3, key=f"{card}_init_{j}")]
+        for j in range(5)
     ]
     evs.append((cfg['initial'][0], probs))
-    if cfg['additional']:
+    if cfg["additional"]:
         st.markdown(f"{card} — Additional VP: {cfg['additional'][0]}")
         cols2 = st.columns(5)
         probs2 = [
-            mapping[cols2[j].selectbox(
-                f"R{j+1} add",
-                options=categories,
-                index=3,
-                key=f"{card}_add_{j}"
-            )] for j in range(5)
+            mapping[cols2[j].selectbox(f"R{j+1} add", categories, index=3, key=f"{card}_add_{j}")]
+            for j in range(5)
         ]
-        evs.append((cfg['additional'][0], probs2))
+        evs.append((cfg["additional"][0], probs2))
     card_events[card] = evs
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6) Sidebar: settings & run guard
 # ─────────────────────────────────────────────────────────────────────────────
-
 with st.sidebar.form("settings_form"):
     st.header("Simulation Settings")
     n_trials      = st.number_input("Trials", 1000, 200_000, 30_000, 1000)
@@ -185,26 +172,21 @@ if not run_sim:
     st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7) Parse settings & prepare
+# 7) Parse settings
 # ─────────────────────────────────────────────────────────────────────────────
-
 if seed_str:
     random.seed(int(seed_str))
     np.random.seed(int(seed_str))
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8) Simulation helper
+# 8) Simulation helper & run
 # ─────────────────────────────────────────────────────────────────────────────
-
 def run_simulation(card_events):
     ev_lookup = {c: compute_ev(evs) for c, evs in card_events.items()}
     # Cards to redraw
     redraw = {}
     for r in included_idx:
-        pool = [
-            c for c in ev_lookup
-            if not (r == 0 and apply_r1 and c in forbidden_r1)
-        ]
+        pool = [c for c in ev_lookup if not (r == 0 and apply_r1 and c in forbidden_r1)]
         avg = np.mean([ev_lookup[c][r] for c in pool]) if pool else 0
         redraw[f"Round {r+1}"] = sorted(c for c in pool if ev_lookup[c][r] < avg)
     df_redraw = pd.DataFrame({
@@ -244,21 +226,18 @@ projected_tot  = scoreboard_tot + exp_mission
 
 with proj_placeholder:
     st.markdown("## 📊 Projected Victory Points")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Secondary Total VP",      f"{sec_total:.0f}")
-    m2.metric("Current+Bonus+Scoreboard",f"{scoreboard_tot:.0f}")
-    m3.metric("Projected Total VP",      f"{projected_tot:.2f}")
+    m1, m2 = st.columns(2)
+    m1.metric("Current+Bonus+Scoreboard", f"{scoreboard_tot:.0f}")
+    m2.metric("Projected Total VP",      f"{projected_tot:.2f}")
     st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 10) Detailed Results
 # ─────────────────────────────────────────────────────────────────────────────
-
 st.header("🎯 Mission VP by Future Rounds")
 st.table(pd.DataFrame({
     "Round":       [round_labels[i] for i in included_idx],
     "Expected VP": np.round(mission_ev[included_idx], 4)
 }))
-
 st.subheader("Cards to Redraw by Round")
 st.table(redraw_df)
