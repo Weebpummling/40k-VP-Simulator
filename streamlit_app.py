@@ -251,4 +251,11 @@ st.markdown("---")
 # 10) Detailed Results
 # ─────────────────────────────────────────────────────────────────────────────
 
-st.header("🎯 Missi
+st.header("🎯 Mission VP by Future Rounds")
+st.table(pd.DataFrame({
+    "Round":       [round_labels[i] for i in included_idx],
+    "Expected VP": np.round(mission_ev[included_idx], 4)
+}))
+
+st.subheader("Cards to Redraw by Round")
+st.table(redraw_df)
