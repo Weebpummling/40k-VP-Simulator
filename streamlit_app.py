@@ -222,14 +222,13 @@ mission_ev, redraw_df = run_simulation(card_events)
 # ─────────────────────────────────────────────────────────────────────────────
 exp_mission    = mission_ev[included_idx].sum()
 scoreboard_tot = START_VP + sec_total + pri_total
-secondary_tot = exp_mission
 projected_tot  = scoreboard_tot + exp_mission
 
 with proj_placeholder:
     st.markdown("## 📊 Projected Victory Points")
     m1, m2, m3 = st.columns(3)
     m1.metric("Current Scoreboard", f"{scoreboard_tot:.0f}")
-    m2.metric("Projected Secondary VP",      f"{secondary_tot:.0f}")
+    m2.metric("Projected Secondary VP",      f"{exp_mission:.0f}")
     m2.metric("Projected Total VP",      f"{projected_tot:.2f}")
     st.markdown("---")
 
