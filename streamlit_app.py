@@ -103,7 +103,7 @@ for card in selected:
 round_labels = [f"Round {i+1}" for i in range(5)]
 with st.sidebar.form("settings_form"):
     st.header("Simulation Settings")
-    n_trials      = st.number_input("Trials", 1000, 200000, 30000, 1000)
+    n_trials      = st.number_input("Trials", 1000, 200_000, 30_000, 1000)
     seed_str      = st.text_input("Random Seed (optional)")
     apply_r1      = st.checkbox("Apply Round-1 Reshuffle Rule", True)
     allow_discard = st.checkbox("Allow Discard/Redraw", True)
@@ -114,19 +114,23 @@ if not run_sim:
     st.info("Configure cards and settings, then click ▶️ Run Simulation.")
     st.stop()
 
-# Parse seed and included rounds
+# ─────────────────────────────────────────────────────────────────────────────
+# 5) Parse settings & prepare
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Seed
 if seed_str:
     s = int(seed_str)
     random.seed(s); np.random.seed(s)
+# Included rounds
 included_idx = [round_labels.index(r) for r in included]
+# Forbidden R1
 forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5) Precompute EVs for redraw logic
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Precompute EVs
 card_ev = {c: compute_ev(evs) for c, evs in card_events.items()}
 
+# Cards to redraw
 cards_to_redraw = {}
 for r in included_idx:
     pool = [
@@ -182,7 +186,6 @@ st.subheader("Cards to Redraw by Round")
 st.table(df_redraw)
 
 if allow_discard:
-    # baseline without discard
     scores_nd = np.zeros_like(scores)
     for t in range(n_trials):
         for r in range(5):
