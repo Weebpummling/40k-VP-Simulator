@@ -17,12 +17,13 @@ def compute_ev(events):
 def score_card(events, round_idx):
     """Sample each event once in round round_idx; sum all points scored."""
     return sum(
-        pts for pts, probs in events
+        pts
+        for pts, probs in events
         if random.random() < probs[round_idx] / 100
     )
 
 def compute_primary_ev(distribution):
-    """Compute EV per round for an exclusive primary‐VP distribution."""
+    """Compute EV per round for an exclusive primary-VP distribution."""
     return [
         sum(pts * (p[r] / 100) for pts, p in distribution)
         for r in range(5)
@@ -57,24 +58,41 @@ round_labels = [f"Round {i+1}" for i in range(5)]
 forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3) Scoreboard input
+# 3) Scoreboard & used‐cards input per round
 # ─────────────────────────────────────────────────────────────────────────────
 
-st.header("Current Scoreboard")
-c1, c2, c3 = st.columns(3)
-sec1 = c1.number_input("Secondary Score A", min_value=0, value=0, step=1)
-sec2 = c2.number_input("Secondary Score B", min_value=0, value=0, step=1)
-prim = c3.number_input("Primary Score",          min_value=0, value=0, step=1)
+st.header("Scoreboard & Cards Used")
+
+secondary_scores = {}
+primary_scores   = {}
+removed_cards_all = set()
+
+for i in range(1, 6):
+    st.subheader(f"Round {i}")
+    c1, c2, c3 = st.columns([2,2,4])
+    secondary_scores[i] = c1.number_input(
+        f"Secondary Score R{i}", min_value=0, value=0, step=1, key=f"sec_{i}"
+    )
+    primary_scores[i] = c2.number_input(
+        f"Primary Score R{i}",   min_value=0, value=0, step=1, key=f"pri_{i}"
+    )
+    used = c3.multiselect(
+        f"Cards used in R{i} (remove from pool)",
+        options=list(BASE_CARDS.keys()),
+        key=f"used_{i}"
+    )
+    removed_cards_all.update(used)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4) Your mission‐cards input
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("Your Mission Cards")
+
 selected = st.multiselect(
     "Choose your cards",
-    options=list(BASE_CARDS.keys()),
-    default=list(BASE_CARDS.keys())
+    options=[c for c in BASE_CARDS if c not in removed_cards_all],
+    default=[c for c in BASE_CARDS if c not in removed_cards_all]
 )
 
 card_events = {}
@@ -84,16 +102,20 @@ for card in selected:
     st.markdown(f"**{card}** — Initial VP: {cfg['initial'][0]}")
     cols = st.columns(5)
     probs = [
-        cols[i].number_input(f"{card} R{i+1} (%)", 0,100,cfg['initial'][1][i], key=f"{card}_init_{i}")
-        for i in range(5)
+        cols[j].number_input(
+            f"{card} R{j+1} (%)", 0, 100, cfg['initial'][1][j],
+            key=f"{card}_init_{j}"
+        ) for j in range(5)
     ]
     evs.append((cfg['initial'][0], probs))
     if cfg['additional']:
         st.markdown(f"{card} — Additional VP: {cfg['additional'][0]}")
         cols2 = st.columns(5)
         probs2 = [
-            cols2[i].number_input(f"{card} R{i+1} add (%)", 0,100,cfg['additional'][1][i], key=f"{card}_add_{i}")
-            for i in range(5)
+            cols2[j].number_input(
+                f"{card} R{j+1} add (%)", 0, 100, cfg['additional'][1][j],
+                key=f"{card}_add_{j}"
+            ) for j in range(5)
         ]
         evs.append((cfg['additional'][0], probs2))
     card_events[card] = evs
@@ -103,14 +125,16 @@ for card in selected:
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("Your Primary VP Distribution")
-n_outcomes = st.number_input("Number of primary outcomes", 1,5,2)
+
+n_outcomes = st.number_input("Number of primary outcomes", 1, 5, 2)
 primary_dist = []
 for idx in range(n_outcomes):
-    pts = st.number_input(f"Outcome {idx+1} VP", 0,10,idx, key=f"pr_pts_{idx}")
+    pts = st.number_input(f"Outcome {idx+1} VP", 0, 10, idx, key=f"pr_pts_{idx}")
     cols = st.columns(5)
     p = [
-        cols[i].number_input(f"R{i+1} (%)", 0,100,0, key=f"pr_{idx}_{i}")
-        for i in range(5)
+        cols[j].number_input(
+            f"R{j+1} (%)", 0, 100, 0, key=f"pr_{idx}_{j}"
+        ) for j in range(5)
     ]
     primary_dist.append((pts, p))
 
@@ -120,7 +144,7 @@ for idx in range(n_outcomes):
 
 with st.sidebar.form("settings_form"):
     st.header("Simulation Settings")
-    n_trials      = st.number_input("Trials", 1000,200_000,30_000,1000)
+    n_trials      = st.number_input("Trials", 1000, 200_000, 30_000, 1000)
     seed_str      = st.text_input("Random Seed (optional)")
     apply_r1      = st.checkbox("Apply Round-1 Reshuffle Rule", True)
     allow_discard = st.checkbox("Allow Discard/Redraw", True)
@@ -146,24 +170,30 @@ included_idx = [round_labels.index(r) for r in included]
 
 def run_simulation(card_events):
     ev_lookup = {c: compute_ev(evs) for c, evs in card_events.items()}
+    # Cards to redraw
     redraw = {}
     for r in included_idx:
-        pool = [c for c in ev_lookup if not (r==0 and apply_r1 and c in forbidden_r1)]
+        pool = [
+            c for c in ev_lookup
+            if not (r == 0 and apply_r1 and c in forbidden_r1)
+        ]
         avg = np.mean([ev_lookup[c][r] for c in pool]) if pool else 0
         redraw[f"Round {r+1}"] = sorted(c for c in pool if ev_lookup[c][r] < avg)
     df_redraw = pd.DataFrame({
         "Round": list(redraw),
         "Cards to Redraw": [", ".join(redraw[r]) for r in redraw]
     })
-    scores = np.zeros((n_trials,5))
+    # Monte Carlo
+    scores = np.zeros((n_trials, 5))
     for t in range(n_trials):
         disc = set()
         for r in range(5):
             pool = [c for c in card_events if c not in disc]
-            if r==0 and apply_r1:
+            if r == 0 and apply_r1:
                 pool = [c for c in pool if c not in forbidden_r1]
-            if not pool: continue
-            hand = random.sample(pool,2)
+            if not pool:
+                continue
+            hand = random.sample(pool, 2)
             if allow_discard:
                 evs_list = [ev_lookup[c][r] for c in hand]
                 rem = [c for c in pool if c not in hand]
@@ -172,11 +202,11 @@ def run_simulation(card_events):
                     idx = int(np.argmin(evs_list))
                     disc.add(hand[idx])
                     hand[idx] = random.choice(rem) if rem else hand[idx]
-            scores[t,r] = sum(score_card(card_events[c],r) for c in hand)
+            scores[t, r] = sum(score_card(card_events[c], r) for c in hand)
     return scores.mean(axis=0), df_redraw
 
 mission_ev, redraw_df = run_simulation(card_events)
-primary_ev = compute_primary_ev(primary_dist)
+primary_ev    = compute_primary_ev(primary_dist)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 9) Display results
@@ -186,13 +216,13 @@ st.header("Results — Your Side")
 st.subheader("Mission VP by Round")
 st.table(pd.DataFrame({
     "Round":       [f"Round {i+1}" for i in included_idx],
-    "Expected VP": np.round(mission_ev[included_idx],4)
+    "Expected VP": np.round(mission_ev[included_idx], 4)
 }))
 
 st.subheader("Primary VP by Round")
 st.table(pd.DataFrame({
     "Round":       round_labels,
-    "Expected VP": np.round(primary_ev,4)
+    "Expected VP": np.round(primary_ev, 4)
 }))
 
 st.subheader("Cards to Redraw by Round")
@@ -204,13 +234,16 @@ st.table(redraw_df)
 
 mission_total  = mission_ev[included_idx].sum()
 primary_total  = sum(primary_ev)
+secondary_total = sum(secondary_scores.values())
+primary_score_total = sum(primary_scores.values())
+
 # incorporate scoreboard
-sec_total      = sec1 + sec2 + mission_total
-prim_total     = prim   + primary_total
-combined_total = sec_total + prim_total
+sec_total      = secondary_total + mission_total
+pri_total      = primary_score_total + primary_total
+combined_total = sec_total + pri_total
 
 st.markdown("---")
 c1, c2, c3 = st.columns(3)
-c1.metric("Mission+Secondary Total", f"{sec_total:.2f}")
-c2.metric("Primary Total",           f"{prim_total:.2f}")
-c3.metric("Overall Combined VP",     f"{combined_total:.2f}")
+c1.metric("Secondary+Mission Total", f"{sec_total:.2f}")
+c2.metric("Primary+PrimaryEV Total", f"{pri_total:.2f}")
+c3.metric("Overall Combined VP",       f"{combined_total:.2f}")
