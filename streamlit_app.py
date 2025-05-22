@@ -1,3 +1,5 @@
+pip install streamlit pandas numpy
+streamlit run streamlit_app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
