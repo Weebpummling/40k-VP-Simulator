@@ -90,18 +90,15 @@ for card in cards:
 
 df = pd.DataFrame(rows, columns=cols)
 edited = st.data_editor(df, num_rows="dynamic", use_container_width=True, key="prob-table")
-validate_probabilities(edited)
-
-# parse back
-card_events = {}
-for _, r in edited[edited["Active"]].iterrows():
-    ev_list = []
-    for e in (1,2):
-        pts = r[f"Event {e} VP"]
-        if pts > 0:
-            probs = [r[f"Event {e} R{i} (%)"] for i in range(1,6)]
-            ev_list.append((pts, probs))
-    card_events[r["Card"]] = ev_list
+def validate_probabilities(df):
+    # grab any column whose header ends with "(%)"
+    prob_cols = [c for c in df.columns if c.strip().endswith("(%)")]
+    for col in prob_cols:
+        # check user entered between 0 and 100
+        bad = df[(df[col] < 0) | (df[col] > 100)]
+        if not bad.empty:
+            st.warning(f"Values in “{col}” must be between 0 and 100.")
+            break
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4) Simulation settings
