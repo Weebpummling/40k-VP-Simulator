@@ -8,7 +8,7 @@ import random
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_ev(events):
-    """Compute EV per round under independent‐events model (points × pct/100)."""
+    """Compute EV per round under independent‐events model (pts × pct/100)."""
     return [
         sum(pts * (probs[r] / 100) for pts, probs in events)
         for r in range(5)
@@ -37,35 +37,23 @@ def validate_probabilities(df):
 
 base_events = {
     "Assassination":        [(5, [20,30,50,70,80])],
-    "Containment":          [(3, [100,100,100,100,100]),
-                             (3, [100,100,70,60,50])],
-    "Behind Enemy Lines":   [(3, [0,20,30,60,60]),
-                             (1, [0,0,20,50,60])],
-    "Marked for Death":     [(5, [0,0,20,30,50])],
-    "Bring it Down":        [(2, [0,50,60,70,80]),
-                             (2, [0,40,50,60,70])],
-    "No Prisoners":         [(2, [20,80,90,90,90]),
-                             (2, [0,60,70,80,80])],
-    "Defend Stronghold":    [(3, [0,100,100,100,100])],
+    "Containment":          [(3,[100,100,100,100,100]), (3,[100,100,70,60,50])],
+    "Behind Enemy Lines":   [(3,[0,20,30,60,60]), (1,[0,0,20,50,60])],
+    "Marked for Death":     [(5,[0,0,20,30,50])],
+    "Bring it Down":        [(2,[0,50,60,70,80]), (2,[0,40,50,60,70])],
+    "No Prisoners":         [(2,[20,80,90,90,90]), (2,[0,60,70,80,80])],
+    "Defend Stronghold":    [(3,[0,100,100,100,100])],
     "Storm Hostile Objective": [(4,[0,60,70,80,60])],
-    "Sabotage":             [(3, [100,90,80,70,60]),
-                             (3, [0,0,0,0,10])],
-    "Cull the Horde":       [(5, [0,0,0,20,30])],
-    "Overwhelming Force":   [(3, [10,70,70,80,80]),
-                             (2, [0,30,70,80,70])],
-    "Extend Battlelines":   [(5, [100,100,100,90,90])],
-    "Recover Assets":       [(3, [100,80,70,60,60]),
-                             (6, [0,0,20,30,30])],
-    "Engage on All Fronts": [(2, [80,30,50,70,80]),
-                             (2, [0,30,40,50,60])],
-    "Area Denial":          [(2, [100,80,80,80,80]),
-                             (3, [80,70,70,70,70])],
-    "Secure No Man's Land": [(2, [100,100,100,100,100]),
-                             (3, [80,80,70,70,70])],
-    "Cleanse":              [(2, [100,100,100,100,100]),
-                             (2, [70,70,70,70,70])],
-    "Establish Locus":      [(2, [100,80,80,80,80]),
-                             (2, [0,0,40,50,70])],
+    "Sabotage":             [(3,[100,90,80,70,60]), (3,[0,0,0,0,10])],
+    "Cull the Horde":       [(5,[0,0,0,20,30])],
+    "Overwhelming Force":   [(3,[10,70,70,80,80]), (2,[0,30,70,80,70])],
+    "Extend Battlelines":   [(5,[100,100,100,90,90])],
+    "Recover Assets":       [(3,[100,80,70,60,60]), (6,[0,0,20,30,30])],
+    "Engage on All Fronts": [(2,[80,30,50,70,80]), (2,[0,30,40,50,60])],
+    "Area Denial":          [(2,[100,80,80,80,80]), (3,[80,70,70,70,70])],
+    "Secure No Man's Land": [(2,[100,100,100,100,100]), (3,[80,80,70,70,70])],
+    "Cleanse":              [(2,[100,100,100,100,100]), (2,[70,70,70,70,70])],
+    "Establish Locus":      [(2,[100,80,80,80,80]), (2,[0,0,40,50,70])]
 }
 
 # Build DataFrame: one row per card
@@ -95,22 +83,33 @@ for card, evs in base_events.items():
 df = pd.DataFrame(rows, columns=columns)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3) Editable table: lock names & VP, only % editable, fixed rows
+# 3) Editable table: lock Card & VP columns, only (%) and Active editable
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Determine which columns are editable: only the "(%)" columns and Active checkbox
-editable_cols = [c for c in columns if c.endswith("(%)")] + ["Active"]
+# Build column_config for st.data_editor
+col_config = {}
+for col in df.columns:
+    if col == "Active":
+        col_config[col] = st.column_config.BooleanColumn(label="Include Card")
+    elif col == "Card":
+        col_config[col] = st.column_config.StringColumn(label="Card Name", disabled=True)
+    elif col in ["Initial VP", "Additional VP"]:
+        col_config[col] = st.column_config.NumberColumn(label=col, disabled=True)
+    elif col.endswith("(%)"):
+        col_config[col] = st.column_config.NumberColumn(
+            label=col, min_value=0, max_value=100, step=1
+        )
 
 edited = st.data_editor(
     df,
     use_container_width=True,
-    num_rows="fixed",
-    editable_columns=editable_cols,
+    column_config=col_config,
+    hide_index=True,
     key="prob-table"
 )
 validate_probabilities(edited)
 
-# Parse active cards back to events
+# Parse active cards back into events dict
 card_events = {}
 for _, r in edited[edited["Active"]].iterrows():
     evs = []
@@ -126,7 +125,7 @@ for _, r in edited[edited["Active"]].iterrows():
     card_events[r["Card"]] = evs
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4) Simulation settings sidebar
+# 4) Sidebar simulation settings
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.sidebar.header("Simulation Settings")
