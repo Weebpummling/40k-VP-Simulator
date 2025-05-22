@@ -77,7 +77,7 @@ for card in selected:
     for i, col in enumerate(cols, start=1):
         probs_init.append(
             col.number_input(
-                f"Round {i} chance (%)",
+                f"R{i} chance (%)",
                 min_value=0, max_value=100,
                 value=default_init[i-1],
                 key=f"{card}_init_{i}"
@@ -94,7 +94,7 @@ for card in selected:
         for i, col in enumerate(cols2, start=1):
             probs_add.append(
                 col.number_input(
-                    f"Round {i} additional (%)",
+                    f"R{i} additional (%)",
                     min_value=0, max_value=100,
                     value=default_add[i-1],
                     key=f"{card}_add_{i}"
@@ -105,16 +105,16 @@ for card in selected:
     card_events[card] = evs
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4) Simulation Settings
+# 4) Simulation settings
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.sidebar.header("Simulation Settings")
 n_trials      = st.sidebar.number_input("Trials", 1000, 200_000, 30_000, 1000)
 seed_str      = st.sidebar.text_input("Random Seed (optional)")
 if seed_str:
-    seed = int(seed_str)
-    random.seed(seed)
-    np.random.seed(seed)
+    s = int(seed_str)
+    random.seed(s)
+    np.random.seed(s)
 
 apply_r1      = st.sidebar.checkbox("Apply Round-1 Reshuffle Rule", True)
 allow_discard = st.sidebar.checkbox("Allow Discard/Redraw", True)
@@ -142,7 +142,16 @@ df_redraw = pd.DataFrame({
 })
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6) Monte Carlo Simulation
+# 6) Run simulation button
+# ─────────────────────────────────────────────────────────────────────────────
+
+run = st.sidebar.button("Run Simulation")
+if not run:
+    st.info("Adjust card selections, probabilities, and settings, then click ▶️ ‘Run Simulation’.")
+    st.stop()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7) Monte Carlo Simulation
 # ─────────────────────────────────────────────────────────────────────────────
 
 scores = np.zeros((n_trials,5))
@@ -168,11 +177,12 @@ for t in range(n_trials):
         scores[t,r] = sum(score_card(card_events[c], r) for c in hand)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7) Display Results
+# 8) Display Results
 # ─────────────────────────────────────────────────────────────────────────────
 
 exp_vp = np.round(scores.mean(axis=0),4)
 
+st.header("Results")
 st.subheader("Expected VP by Round")
 st.table(pd.DataFrame({
     "Round":       [round_labels[i] for i in inc_idx],
