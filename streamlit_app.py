@@ -1,343 +1,481 @@
 import streamlit as st
+import pandas as pd
 import numpy as np
 import random
-import pandas as pd
+import io
+import copy
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 0) Starting Bonus
+# Constants & Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-START_VP = 10
+MAX_ROUNDS = 5
+START_VP   = 10
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1) Probability Categories & Mapping
-# ─────────────────────────────────────────────────────────────────────────────
-categories = [
-    "Guaranteed (100%)",
-    "Highly Likely (80%)",
-    "Likely (70%)",
-    "Maybe (50%)",
-    "Unlikely (30%)",
-    "Highly Unlikely (10%)"
-]
-mapping = {c: int(c.split("(")[1].strip("%)")) for c in categories}
+CATEGORIES = ["100%","80%","50%","30%","<10%"]
+PCT_MAP    = {"100%":100,"80%":80,"50%":50,"30%":30,"<10%":10}
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2) Base-card Definitions
-# ─────────────────────────────────────────────────────────────────────────────
-BASE_CARDS = {
-    "Assassination":           {"initial": (5,  [20,30,50,70,80]),       "additional": None},
-    "Containment":             {"initial": (3,  [100,100,100,100,100]), "additional": (3,  [100,100,70,60,50])},
-    "Behind Enemy Lines":      {"initial": (3,  [0,20,30,60,60]),       "additional": (1,  [0,0,20,50,60])},
-    "Marked for Death":        {"initial": (5,  [0,0,20,30,50]),        "additional": None},
-    "Bring it Down":           {"initial": (2,  [0,50,60,70,80]),       "additional": (2,  [0,40,50,60,70])},
-    "No Prisoners":            {"initial": (2,  [20,80,90,90,90]),      "additional": (2,  [0,60,70,80,80])},
-    "Defend Stronghold":       {"initial": (3,  [0,100,100,100,100]),  "additional": None},
-    "Storm Hostile Objective": {"initial": (4,  [0,60,70,80,60]),       "additional": None},
-    "Sabotage":                {"initial": (3,  [100,90,80,70,60]),     "additional": (3,  [0,0,0,0,10])},
-    "Cull the Horde":          {"initial": (5,  [0,0,0,20,30]),         "additional": None},
-    "Overwhelming Force":      {"initial": (3,  [10,70,70,80,80]),      "additional": (2,  [0,30,70,80,70])},
-    "Extend Battlelines":      {"initial": (5,  [100,100,100,90,90]),    "additional": None},
-    "Recover Assets":          {"initial": (3,  [100,80,70,60,60]),     "additional": (6,  [0,0,20,30,30])},
-    "Engage on All Fronts":    {"initial": (2,  [80,30,50,70,80]),      "additional": (2,  [0,30,40,50,60])},
-    "Area Denial":             {"initial": (2,  [100,80,80,80,80]),     "additional": (3,  [80,70,70,70,70])},
-    "Secure No Man's Land":    {"initial": (2,  [100,100,100,100,100]),"additional": (3,  [80,80,70,70,70])},
-    "Cleanse":                 {"initial": (2,  [100,100,100,100,100]),"additional": (2,  [70,70,70,70,70])},
-    "Establish Locus":         {"initial": (2,  [100,80,80,80,80]),    "additional": (2,  [0,0,40,50,70])},
+DEFAULT_PROBS = {
+    "Assassination":        [(5, [20, 30, 50, 70, 80])],
+    "Containment":          [(3, [100, 100, 100, 100, 100]), (3, [100, 100, 80, 50, 50])],
+    "Behind Enemy Lines":   [(3, [0, 10, 30, 50, 80]), (1, [0, 0, 30, 50, 80])],
+    "Marked for Death":     [(5, [0, 0, 20, 30, 50])],
+    "Bring it Down":        [(2, [0, 50, 80, 80, 80]), (2, [0, 30, 50, 50, 50])],
+    "No Prisoners":         [(2, [20, 80, 100, 100, 100]), (2, [0, 50, 80, 80, 80]), (1, [0, 50, 80, 80, 80])],
+    "Defend Stronghold":    [(3, [0, 100, 100, 100, 100])],
+    "Storm Hostile Objective": [(4, [0, 50, 80, 80, 50])],
+    "Sabotage":             [(3, [100, 80, 80, 50, 50]), (3, [0, 0, 0, 0, 10])],
+    "Cull the Horde":       [(5, [0, 0, 0, 10, 30])],
+    "Overwhelming Force":   [(3, [10, 80, 80, 80, 80]), (2, [0, 30, 80, 80, 80])],
+    "Extend Battlelines":   [(5, [100, 100, 100, 100, 100])],
+    "Recover Assets":       [(3, [100, 80, 80, 50, 50]), (6, [0, 0, 30, 30, 30])],
+    "Engage on All Fronts": [(2, [80, 30, 50, 80, 80]), (2, [0, 30, 30, 50, 50])], 
+    "Area Denial":          [(2, [100, 80, 80, 80, 80]), (3, [80, 80, 80, 80, 80])],
+    "Secure No Man's Land": [(2, [100, 100, 100, 100, 100]), (3, [80, 80, 80, 80, 80])],
+    "Cleanse":              [(2, [100, 100, 100, 100, 100]), (2, [80, 80, 80, 80, 80])],
+    "Establish Locus":      [(2, [100, 80, 80, 80, 80]), (2, [0, 0, 40, 50, 80])]
 }
-round_labels = [f"Round {i+1}" for i in range(5)]
-forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
+CARD_LIST = sorted(list(DEFAULT_PROBS.keys()))
+MAX_EVENTS = max(len(evs) for evs in DEFAULT_PROBS.values()) if DEFAULT_PROBS else 1
+
+COL_EVENT_PTS_TPL = "E{}_pts"
+COL_EVENT_ROUND_PROB_TPL = "E{}_r{}"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3) Prefill session_state Defaults
+# Session State Initialization
 # ─────────────────────────────────────────────────────────────────────────────
-for card, cfg in BASE_CARDS.items():
-    for j, pct in enumerate(cfg["initial"][1]):
-        key = f"{card}_init_{j}"
-        if key not in st.session_state:
-            st.session_state[key] = min(categories, key=lambda c: abs(mapping[c] - pct))
-    if cfg["additional"]:
-        for j, pct in enumerate(cfg["additional"][1]):
-            key = f"{card}_add_{j}"
-            if key not in st.session_state:
-                st.session_state[key] = min(categories, key=lambda c: abs(mapping[c] - pct))
+if 'PROB_EVENTS' not in st.session_state:
+    st.session_state.PROB_EVENTS = copy.deepcopy(DEFAULT_PROBS)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 4) Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-def compute_ev(events):
-    return [sum(pts * (probs[r] / 100) for pts, probs in events) for r in range(5)]
+if 'scoreboard_data_list' not in st.session_state:
+    st.session_state.scoreboard_data_list = [
+        {'s1': 0, 's2': 0, 'p': 0, 'used': []} for _ in range(MAX_ROUNDS)
+    ]
 
-def score_card(events, r):
-    return sum(pts for pts, probs in events if random.random() < probs[r] / 100)
+if 'active_current' not in st.session_state:
+    st.session_state.active_current = []
+if 'manually_removed_cards' not in st.session_state:
+    st.session_state.manually_removed_cards = set()
+if 'scoreboard_used_cards' not in st.session_state: 
+    st.session_state.scoreboard_used_cards = set()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 5) Round Tracker
-# ─────────────────────────────────────────────────────────────────────────────
-if "current_round" not in st.session_state:
-    st.session_state.current_round = 1
+if 'active_mission_overrides' not in st.session_state:
+    st.session_state.active_mission_overrides = {} 
+if 'last_known_cur_round_for_overrides' not in st.session_state:
+    st.session_state.last_known_cur_round_for_overrides = -1
+if 'last_known_active_cards_for_overrides' not in st.session_state:
+    st.session_state.last_known_active_cards_for_overrides = []
 
-prev_col, next_col = st.columns(2)
-with prev_col:
-    if st.button("Previous Round") and st.session_state.current_round > 1:
-        st.session_state.current_round -= 1
-with next_col:
-    if st.button("Next Round") and st.session_state.current_round < 5:
-        st.session_state.current_round += 1
+if 'include_start_vp' not in st.session_state:
+    st.session_state.include_start_vp = True
+if 'current_active_hand_ev' not in st.session_state:
+    st.session_state.current_active_hand_ev = 0.0
+if 'total_sim_future_vp' not in st.session_state:
+    st.session_state.total_sim_future_vp = 0.0
 
-r_idx = st.session_state.current_round - 1
-st.markdown(f"## 🕒 Current Round: {st.session_state.current_round}")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6) Live Scoreboard & Used Cards (persistent)
+# Helper Functions
 # ─────────────────────────────────────────────────────────────────────────────
-st.header("📋 Live Scoreboard & Used Cards")
-secondary_scores = {}
-primary_scores   = {}
-used_cards_all   = set()
+def find_closest_category(prob_val, categories_list, pct_map):
+    """Finds the string category in categories_list closest to prob_val."""
+    if f"{prob_val}%" in categories_list: return f"{prob_val}%"
+    min_diff, closest_cat_str = float('inf'), categories_list[-1]
+    for cat_str in categories_list:
+        cat_val = pct_map.get(cat_str, 0)
+        diff = abs(prob_val - cat_val)
+        if diff < min_diff: min_diff, closest_cat_str = diff, cat_str
+        elif diff == min_diff and pct_map.get(cat_str,0) > pct_map.get(closest_cat_str,0): closest_cat_str = cat_str
+    return closest_cat_str
 
-for i in range(1, 6):
-    secondary_scores[i] = st.number_input(
-        f"Secondary Score R{i}", min_value=0, value=0, step=1, key=f"sec_{i}"
-    )
-    primary_scores[i]   = st.number_input(
-        f"Primary Score   R{i}", min_value=0, value=0, step=1, key=f"pri_{i}"
-    )
-    default_used = st.session_state.get(f"used_{i}", [])
-    used = st.multiselect(
-        f"Used cards R{i}",
-        options=list(BASE_CARDS.keys()),
-        default=default_used,
-        key=f"used_{i}"
-    )
-    used_cards_all.update(used)
-
-sec_total = sum(secondary_scores.values())
-pri_total = sum(primary_scores.values())
-
-st.markdown("---")
-c1, c2, c3 = st.columns(3)
-c1.metric("Starting Bonus VP", START_VP)
-c2.metric("Secondary Total VP", sec_total)
-c3.metric("Primary Total VP",   pri_total)
-
-# only rounds strictly after current, with no secondary logged
-future_rounds = [r for r in range(r_idx+1, 5) if secondary_scores[r+1] == 0]
+def calculate_hand_ev_for_round(hand, round_idx, prob_events_data, overrides=None):
+    """Calculates Expected Value for a hand for a specific round, considering overrides."""
+    ev = 0
+    if not hand or not prob_events_data: return 0
+    for card_name in hand:
+        if card_name in prob_events_data:
+            for event_i, (pts, prs_list) in enumerate(prob_events_data[card_name]):
+                if 0 <= round_idx < len(prs_list):
+                    default_prob_pct = prs_list[round_idx]
+                    override_key = f"override_{card_name}_E{event_i+1}_R{round_idx+1}" 
+                    
+                    current_prob_pct = default_prob_pct
+                    if overrides and override_key in overrides:
+                        current_prob_pct = overrides[override_key] 
+                    
+                    ev += pts * (current_prob_pct / 100.0)
+    return ev
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7) Active Missions + Current‐Round Probabilities
+# Sidebar Settings
 # ─────────────────────────────────────────────────────────────────────────────
-st.header("🎯 Your Active Missions")
-active_opts = [c for c in BASE_CARDS if c not in used_cards_all]
-active_default = st.session_state.get("active_current", [])
-active_current = st.multiselect(
-    "Select up to two active missions",
-    options=active_opts,
-    default=active_default,
-    key="active_current"
+st.sidebar.header("General Settings")
+st.session_state.include_start_vp = st.sidebar.checkbox(
+    "Include Painting Points (10 VP) in Totals", 
+    value=st.session_state.include_start_vp,
+    key="include_start_vp_checkbox"
 )
-if len(active_current) > 2:
-    st.error("Please select at most two.")
+st.sidebar.divider() 
 
-removed_pool = used_cards_all.union(active_current)
+st.sidebar.header("Probability Profiles")
+upload = st.sidebar.file_uploader("Import settings CSV", type="csv")
+if upload:
+    try:
+        df_up = pd.read_csv(upload, index_col=0)
+        imported, malformed_entries = {}, []
+        for card_name, row in df_up.iterrows():
+            evs, valid_card, num_events_csv = [], True, 0
+            for i in range(1, MAX_EVENTS + 1):
+                pts_col, pts = COL_EVENT_PTS_TPL.format(i), row.get(COL_EVENT_PTS_TPL.format(i))
+                if pd.notna(pts) and pts > 0:
+                    num_events_csv += 1; round_cols = [COL_EVENT_ROUND_PROB_TPL.format(i, r + 1) for r in range(MAX_ROUNDS)]
+                    missing_round_cols = [rc for rc in round_cols if rc not in row.index or pd.isna(row[rc])]
+                    if missing_round_cols: malformed_entries.append(f"'{card_name}' E{i}: missing {missing_round_cols}"); valid_card = False; break
+                    prs = [int(row.get(rc, 0)) for rc in round_cols]; evs.append((int(pts), prs))
+            if valid_card and evs:
+                imported[card_name] = evs
+                if card_name in DEFAULT_PROBS and len(evs) != len(DEFAULT_PROBS[card_name]): st.sidebar.warning(f"'{card_name}': imported {len(evs)} vs default {len(DEFAULT_PROBS[card_name])} events.")
+            elif not evs and valid_card and card_name in df_up.index: malformed_entries.append(f"'{card_name}': No valid events.")
+        if malformed_entries: st.sidebar.error("CSV malformed. Not fully loaded. Errors:\n- " + "\n- ".join(malformed_entries))
+        if imported: 
+            st.session_state.PROB_EVENTS = imported
+            st.sidebar.success("Profile imported!")
+            st.rerun() 
+        elif not malformed_entries : st.sidebar.warning("CSV empty or no valid data.")
+    except Exception as e: st.sidebar.error(f"Error processing CSV: {e}")
 
-for card in active_current:
-    cfg = BASE_CARDS[card]
-    colA, colB = st.columns(2)
-    key0 = f"{card}_init_{r_idx}"
-    colA.selectbox(
-        f"{card}: chance to score {cfg['initial'][0]} VP",
-        categories,
-        index=categories.index(st.session_state[key0]),
-        key=key0
-    )
-    if cfg["additional"]:
-        key1 = f"{card}_add_{r_idx}"
-        colB.selectbox(
-            f"+{cfg['additional'][0]} VP",
-            categories,
-            index=categories.index(st.session_state[key1]),
-            key=key1
-        )
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 8) Discard Recommendation
-# ─────────────────────────────────────────────────────────────────────────────
-if len(active_current) == 2:
-    ev_act = {}
-    for c in active_current:
-        e0 = BASE_CARDS[c]["initial"][0] * mapping[st.session_state[f"{c}_init_{r_idx}"]]/100
-        if BASE_CARDS[c]["additional"]:
-            e0 += BASE_CARDS[c]["additional"][0] * mapping[st.session_state[f"{c}_add_{r_idx}"]]/100
-        ev_act[c] = e0
-
-    pool = [c for c in BASE_CARDS if c not in removed_pool]
-    ev_pool = []
-    for c in pool:
-        x = BASE_CARDS[c]["initial"][0] * mapping[st.session_state[f"{c}_init_{r_idx}"]]/100
-        if BASE_CARDS[c]["additional"]:
-            x += BASE_CARDS[c]["additional"][0] * mapping[st.session_state[f"{c}_add_{r_idx}"]]/100
-        ev_pool.append(x)
-    avg_pool = np.mean(ev_pool) if ev_pool else 0
-
-    st.subheader("📣 Discard Recommendation")
-    for c, e in ev_act.items():
-        action = "DISCARD" if avg_pool > e else "KEEP"
-        st.write(f"{c}: EV={e:.2f}, pool avg={avg_pool:.2f} → **{action}**")
+out_export = {}
+for card, evs in st.session_state.PROB_EVENTS.items():
+    rec = {};
+    for idx, (pts, prs) in enumerate(evs, start=1):
+        rec[COL_EVENT_PTS_TPL.format(idx)] = pts
+        for r_loop_idx, p_val in enumerate(prs, start=1): rec[COL_EVENT_ROUND_PROB_TPL.format(idx, r_loop_idx)] = p_val 
+    out_export[card] = rec
+df_out = pd.DataFrame(out_export).T.fillna(0).astype(int); csv_buffer = io.StringIO(); df_out.to_csv(csv_buffer)
+st.sidebar.download_button("Export Current Profile as CSV", csv_buffer.getvalue(), "probs.csv", "text/csv")
+st.sidebar.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9) Command Points Tracker
+# UI: Edit per-round probabilities
 # ─────────────────────────────────────────────────────────────────────────────
-st.header("🛡️ Command Points")
-g_col, s_col = st.columns(2)
-cp_g = g_col.number_input("Gained", min_value=0, value=0, step=1, key="cp_g")
-cp_s = s_col.number_input("Spent",  min_value=0, value=0, step=1, key="cp_s")
-st.metric("Net CP", cp_g - cp_s)
+st.header("⚙️ Edit Mission Probabilities (Baseline)")
+with st.expander("Show/hide probability table"):
+    updated_probs_edit = copy.deepcopy(st.session_state.PROB_EVENTS)
+    
+    temp_calculated_cur_round_for_edit = 0
+    for i_edit_cur_round, round_data_edit_cur_round in enumerate(st.session_state.scoreboard_data_list):
+        if round_data_edit_cur_round['s1'] > 0 or round_data_edit_cur_round['s2'] > 0 or round_data_edit_cur_round['used']:
+            if i_edit_cur_round < MAX_ROUNDS - 1: temp_calculated_cur_round_for_edit = i_edit_cur_round + 1
+            else: temp_calculated_cur_round_for_edit = MAX_ROUNDS - 1
+        else: break
+    cur_round_for_edit_display = temp_calculated_cur_round_for_edit
 
-proj_placeholder = st.container()
+
+    for card, evs in st.session_state.PROB_EVENTS.items():
+        st.markdown(f"**{card}**"); new_evs_for_card = []
+        for event_idx, (pts, prs_list) in enumerate(evs, start=1):
+            # Create columns for VP label and only for current/future rounds
+            num_future_rounds = MAX_ROUNDS - cur_round_for_edit_display
+            num_cols_to_create = 1 + num_future_rounds # VP label + future rounds
+            
+            # If all rounds are past, just show VP
+            if num_future_rounds <= 0:
+                cols = st.columns(1)
+                cols[0].markdown(f"*VP: {pts}* (All rounds past)")
+                new_prs_for_event = list(prs_list) # Keep original probabilities
+            else:
+                cols = st.columns(num_cols_to_create)
+                cols[0].markdown(f"*VP: {pts}*")
+                new_prs_for_event = list(prs_list) # Start with original, modify current/future
+
+                col_idx_offset = 1 # Start placing selectboxes in the second column object
+                for r_game_round_0_indexed in range(cur_round_for_edit_display, MAX_ROUNDS):
+                    r_game_round_1_indexed = r_game_round_0_indexed + 1
+                    
+                    prob_val = prs_list[r_game_round_0_indexed]
+                    key = f"edit_{card}_E{event_idx}_r{r_game_round_1_indexed}"
+                    default_cat_str = find_closest_category(prob_val, CATEGORIES, PCT_MAP)
+                    
+                    # Use a proper label for the selectbox, even if it's just the round number
+                    choice = cols[col_idx_offset].selectbox(
+                        f"R{r_game_round_1_indexed}", 
+                        CATEGORIES, 
+                        index=CATEGORIES.index(default_cat_str), 
+                        key=key, 
+                        label_visibility="visible" # Show R{X} label above selectbox
+                    )
+                    new_prs_for_event[r_game_round_0_indexed] = PCT_MAP.get(choice, 10) # Update specific index
+                    col_idx_offset += 1
+            
+            new_evs_for_card.append((pts, new_prs_for_event))
+        updated_probs_edit[card] = new_evs_for_card
+        
+    if st.button("Apply Baseline Probability Changes"):
+        st.session_state.PROB_EVENTS = updated_probs_edit
+        st.success("Baseline Probabilities updated!")
+        st.rerun() 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 10) Future Missions UI & Simulation
+# Live Scoreboard & Round Detection
 # ─────────────────────────────────────────────────────────────────────────────
-if future_rounds:
-    st.header("📈 Future Missions Probabilities")
+st.header("📋 Live Scoreboard & Current Round")
 
-    available = [c for c in BASE_CARDS if c not in removed_pool]
-    selected = st.multiselect(
-        "Include in simulation",
-        options=available,
-        default=available
-    )
+current_scoreboard_used_cards_set = set()
+for round_data_sb_init in st.session_state.scoreboard_data_list: 
+    current_scoreboard_used_cards_set.update(round_data_sb_init.get('used', []))
+if current_scoreboard_used_cards_set != st.session_state.scoreboard_used_cards:
+    st.session_state.scoreboard_used_cards = current_scoreboard_used_cards_set
 
-    card_events = {}
-    # build events for future-draw cards
-    for card in selected:
-        cfg = BASE_CARDS[card]
-        evs = []
-        st.markdown(f"**{card}** (Initial {cfg['initial'][0]} VP)")
-        cols = st.columns(len(future_rounds))
-        for idx, r in enumerate(future_rounds):
-            key = f"{card}_init_{r}"
-            cols[idx].selectbox(
-                f"R{r+1}",
-                categories,
-                index=categories.index(st.session_state[key]),
-                key=key
-            )
-        p0 = [mapping[st.session_state[f"{card}_init_{j}"]] for j in range(5)]
-        evs.append((cfg["initial"][0], p0))
+calculated_cur_round = 0
+for i_sb_round, round_data_sb_cur in enumerate(st.session_state.scoreboard_data_list): 
+    if round_data_sb_cur['s1'] > 0 or round_data_sb_cur['s2'] > 0 or round_data_sb_cur['used']:
+        if i_sb_round < MAX_ROUNDS - 1: 
+            calculated_cur_round = i_sb_round + 1
+        else: 
+            calculated_cur_round = MAX_ROUNDS - 1 
+    else: 
+        break 
+cur_round = calculated_cur_round # This is 0-indexed
 
-        if cfg["additional"]:
-            st.markdown(f"(+{cfg['additional'][0]} VP)")
-            cols2 = st.columns(len(future_rounds))
-            for idx, r in enumerate(future_rounds):
-                key = f"{card}_add_{r}"
-                cols2[idx].selectbox(
-                    f"R{r+1}+",
-                    categories,
-                    index=categories.index(st.session_state[key]),
-                    key=key
-                )
-            p1 = [mapping[st.session_state[f"{card}_add_{j}"]] for j in range(5)]
-            evs.append((cfg["additional"][0], p1))
+total_s1, total_s2, total_p = 0, 0, 0
+for i_sb_form in range(MAX_ROUNDS): 
+    with st.container(border=True): 
+        st.subheader(f"Round {i_sb_form+1}")
+        cols = st.columns([1,1,1,2])
+        round_data_form = st.session_state.scoreboard_data_list[i_sb_form] 
 
-        card_events[card] = evs
+        round_data_form['s1'] = cols[0].number_input(f"Sec 1 VP (R{i_sb_form+1})", min_value=0, max_value=15, value=round_data_form['s1'], key=f"s1_r{i_sb_form}", label_visibility="collapsed", help="Secondary 1 VPs for this round")
+        round_data_form['s2'] = cols[1].number_input(f"Sec 2 VP (R{i_sb_form+1})", min_value=0, max_value=15, value=round_data_form['s2'], key=f"s2_r{i_sb_form}", label_visibility="collapsed", help="Secondary 2 VPs for this round")
+        round_data_form['p'] = cols[2].number_input(f"Primary VP (R{i_sb_form+1})", min_value=0, max_value=20, value=round_data_form['p'], key=f"p_r{i_sb_form}", label_visibility="collapsed", help="Primary VPs for this round")
+        
+        other_rounds_used_cards = set()
+        for r_idx_sb_options, r_data_sb_options in enumerate(st.session_state.scoreboard_data_list): 
+            if r_idx_sb_options != i_sb_form: other_rounds_used_cards.update(r_data_sb_options['used'])
+        
+        card_options_for_this_round = [c for c in CARD_LIST if c not in other_rounds_used_cards]
+        card_options_for_this_round = sorted(list(set(card_options_for_this_round + round_data_form['used'])))
 
-    # add current active for this round only
-    for card in active_current:
-        cfg = BASE_CARDS[card]
-        evs = []
-        p0 = [mapping[st.session_state[f"{card}_init_{j}"]] for j in range(5)]
-        evs.append((cfg["initial"][0], p0))
-        if cfg["additional"]:
-            p1 = [mapping[st.session_state[f"{card}_add_{j}"]] for j in range(5)]
-            evs.append((cfg["additional"][0], p1))
-        card_events[card] = evs
+        round_data_form['used'] = cols[3].multiselect(f"Cards Used (R{i_sb_form+1})", options=card_options_for_this_round, default=round_data_form['used'], key=f"used_r{i_sb_form}", placeholder="Select scored cards", label_visibility="collapsed", help="Secondary cards scored/revealed this round")
+        
+        total_s1 += round_data_form['s1']; total_s2 += round_data_form['s2']; total_p += round_data_form['p']
+        st.session_state.scoreboard_data_list[i_sb_form] = round_data_form
 
-    # run simulation
-    with st.sidebar.form("settings"):
-        n_trials      = st.number_input("Trials", 1000, 200_000, 30_000, 1000)
-        seed_str      = st.text_input("Random Seed (optional)")
-        apply_r1      = st.checkbox("Apply R1 Reshuffle", True)
-        allow_discard = st.checkbox("Allow Discard/Redraw", True)
-        run_sim       = st.form_submit_button("Run Simulation ▶️")
+st.write(f"**Current Game Round (for active play):** {cur_round+1} (Internal 0-indexed: {cur_round})")
+sec_total = total_s1 + total_s2 
+pri_total = total_p 
 
-    if not run_sim:
-        st.stop()
-    if seed_str:
-        random.seed(int(seed_str)); np.random.seed(int(seed_str))
+# ─────────────────────────────────────────────────────────────────────────────
+# Card Pool Management
+# ─────────────────────────────────────────────────────────────────────────────
+st.sidebar.divider()
+st.sidebar.header("Card Deck Management")
+st.sidebar.write("**Scoreboard Used Cards:**")
+if st.session_state.scoreboard_used_cards: st.sidebar.write(", ".join(sorted(list(st.session_state.scoreboard_used_cards))))
+else: st.sidebar.write("*None yet*")
 
-    def run_simulation(events):
-        ev_lookup = {c: compute_ev(evs) for c, evs in events.items()}
-        redraw = {}
-        for r in future_rounds:
-            pool = [c for c in ev_lookup if not (r == 0 and apply_r1 and c in forbidden_r1)]
-            avg = np.mean([ev_lookup[c][r] for c in pool]) if pool else 0
-            redraw[f"Round {r+1}"] = sorted(c for c in pool if ev_lookup[c][r] < avg)
-        df_redraw = pd.DataFrame({
-            "Round": list(redraw),
-            "Cards to Redraw": [", ".join(redraw[r]) for r in redraw]
-        })
-        scores = np.zeros((n_trials, len(future_rounds)))
-        for t in range(n_trials):
-            disc = set()
-            for i, r in enumerate(future_rounds):
-                pool = [c for c in events if c not in disc and c not in active_current]
-                if r == 0 and apply_r1:
-                    pool = [c for c in pool if c not in forbidden_r1]
-                if not pool:
-                    continue
-                hand = random.sample(pool, 2)
-                if allow_discard:
-                    vals = [ev_lookup[c][r] for c in hand]
-                    rem  = [c for c in pool if c not in hand]
-                    rep  = np.mean([ev_lookup[c][r] for c in rem]) if rem else 0
-                    if rep > min(vals):
-                        j = int(np.argmin(vals))
-                        disc.add(hand[j])
-                        hand[j] = random.choice(rem) if rem else hand[j]
-                scores[t, i] = sum(score_card(events[c], r) for c in hand)
-        return scores.mean(axis=0), df_redraw
+potential_cards_for_manual_removal = [c for c in CARD_LIST if c not in st.session_state.scoreboard_used_cards]
+selected_manual_removals = st.sidebar.multiselect("Manually Remove Cards from Deck:", options=sorted(potential_cards_for_manual_removal), default=list(st.session_state.manually_removed_cards), help="Select cards to remove from the draw pool.")
+if set(selected_manual_removals) != st.session_state.manually_removed_cards:
+    st.session_state.manually_removed_cards = set(selected_manual_removals)
+    st.rerun() 
 
-    future_ev, redraw_df = run_simulation(card_events)
+AVAILABLE_DRAW_POOL = [c for c in CARD_LIST if c not in st.session_state.scoreboard_used_cards and c not in st.session_state.manually_removed_cards]
+st.sidebar.write("**Available Draw Pool Size:** " + str(len(AVAILABLE_DRAW_POOL)))
+with st.sidebar.expander("View Available Draw Pool"): st.write(", ".join(sorted(AVAILABLE_DRAW_POOL)) if AVAILABLE_DRAW_POOL else "*Empty*")
+st.sidebar.divider()
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Active Missions & Discard Recommendation
+# ─────────────────────────────────────────────────────────────────────────────
+st.header(f"🎯 Active Missions & EV for Round {cur_round+1}")
+
+if cur_round != st.session_state.last_known_cur_round_for_overrides or \
+   set(st.session_state.active_current) != set(st.session_state.last_known_active_cards_for_overrides):
+    st.session_state.active_mission_overrides = {}
+    st.session_state.last_known_cur_round_for_overrides = cur_round
+    st.session_state.last_known_active_cards_for_overrides = list(st.session_state.active_current)
+    st.session_state.current_active_hand_ev = 0.0 
+
+active_opts_for_selection = [c for c in AVAILABLE_DRAW_POOL if c not in st.session_state.active_current]
+active_opts_for_selection = sorted(list(set(active_opts_for_selection + st.session_state.active_current)))
+
+active_current_selection = st.multiselect(f"Select up to 2 active missions for Round {cur_round+1}", options=active_opts_for_selection, default=st.session_state.active_current, key="active_current_multiselect")
+if set(active_current_selection) != set(st.session_state.active_current): 
+    st.session_state.active_current = active_current_selection
+    st.session_state.active_mission_overrides = {} 
+    st.session_state.last_known_active_cards_for_overrides = list(st.session_state.active_current) 
+    st.rerun() 
+
+if len(st.session_state.active_current) > 2: st.error("Max 2 active missions. Please deselect some.")
+
+ev_current_hand_for_active_section = 0.0 
+if cur_round < MAX_ROUNDS and st.session_state.active_current:
+    st.subheader(f"⚡ Adjust Probabilities & See EV for Hand in Round {cur_round+1}")
+    current_hand_for_ev_calc = st.session_state.active_current 
+    
+    for card_name_active in current_hand_for_ev_calc: 
+        if card_name_active in st.session_state.PROB_EVENTS:
+            st.markdown(f"**{card_name_active}**")
+            card_events_data = st.session_state.PROB_EVENTS[card_name_active]
+            for i_event_override, (pts, prs_list) in enumerate(card_events_data): 
+                prob_for_cur_round_default = prs_list[cur_round] 
+                override_key = f"override_{card_name_active}_E{i_event_override+1}_R{cur_round+1}"
+                
+                current_display_prob = st.session_state.active_mission_overrides.get(override_key, prob_for_cur_round_default)
+                default_cat_str = find_closest_category(current_display_prob, CATEGORIES, PCT_MAP)
+                
+                choice_cat = st.selectbox(f"Event {i_event_override+1} ({pts} VP) - Chance for R{cur_round+1}", CATEGORIES,
+                                       index=CATEGORIES.index(default_cat_str),
+                                       key=override_key + "_sb") 
+                
+                chosen_pct_value = PCT_MAP.get(choice_cat, 10)
+                if override_key not in st.session_state.active_mission_overrides or \
+                   st.session_state.active_mission_overrides[override_key] != chosen_pct_value:
+                    st.session_state.active_mission_overrides[override_key] = chosen_pct_value
+    
+    ev_current_hand_for_active_section = calculate_hand_ev_for_round(current_hand_for_ev_calc, cur_round, st.session_state.PROB_EVENTS, st.session_state.active_mission_overrides)
+    st.session_state.current_active_hand_ev = ev_current_hand_for_active_section 
+
+    if len(current_hand_for_ev_calc) > 0 :
+        best_discard_option = {"card_to_discard": None, "avg_ev_if_redrawn": ev_current_hand_for_active_section, "improvement": 0}
+        deck_for_redraw = [c for c in AVAILABLE_DRAW_POOL if c not in current_hand_for_ev_calc] # Correctly excludes active hand
+
+        if not deck_for_redraw: st.write("*No cards available in the deck to redraw.*")
+        else:
+            for card_in_hand_to_discard in current_hand_for_ev_calc:
+                temp_hand_after_discard = [c for c in current_hand_for_ev_calc if c != card_in_hand_to_discard]
+                sum_ev_of_potential_new_hands = 0
+                for replacement_card_from_deck in deck_for_redraw:
+                    hypothetical_hand = temp_hand_after_discard + [replacement_card_from_deck]
+                    temp_overrides_for_kept_cards = {}
+                    for kept_card in temp_hand_after_discard:
+                        if kept_card in st.session_state.PROB_EVENTS: 
+                            for event_j, (_, _) in enumerate(st.session_state.PROB_EVENTS[kept_card]):
+                                kept_override_key = f"override_{kept_card}_E{event_j+1}_R{cur_round+1}"
+                                if kept_override_key in st.session_state.active_mission_overrides:
+                                    temp_overrides_for_kept_cards[kept_override_key] = st.session_state.active_mission_overrides[kept_override_key]
+                    sum_ev_of_potential_new_hands += calculate_hand_ev_for_round(hypothetical_hand, cur_round, st.session_state.PROB_EVENTS, temp_overrides_for_kept_cards)
+                
+                avg_ev_this_discard_path = sum_ev_of_potential_new_hands / len(deck_for_redraw)
+                improvement = avg_ev_this_discard_path - ev_current_hand_for_active_section
+                st.write(f"- If '{card_in_hand_to_discard}' is discarded, average EV with redraw: {avg_ev_this_discard_path:.2f} VP (Improvement: {improvement:.2f} VP)")
+                if improvement > best_discard_option["improvement"]: best_discard_option = {"card_to_discard": card_in_hand_to_discard, "avg_ev_if_redrawn": avg_ev_this_discard_path, "improvement": improvement}
+            
+            if best_discard_option["card_to_discard"] and best_discard_option["improvement"] > 0.05: st.success(f"**Recommendation: Discard '{best_discard_option['card_to_discard']}'.** Expected EV gain: {best_discard_option['improvement']:.2f} VP.")
+            else: st.info("**Recommendation: Keep current hand.** No discard option offers significant EV improvement.")
 else:
-    # no future rounds
-    future_ev  = np.array([])
-    redraw_df  = pd.DataFrame({"Round": [], "Cards to Redraw": []})
-
-# EV of active missions
-ev_active = sum(
-    BASE_CARDS[c]["initial"][0] * mapping[st.session_state[f"{c}_init_{r_idx}"]]/100
-    + (BASE_CARDS[c]["additional"][0] * mapping[st.session_state[f"{c}_add_{r_idx}"]]/100
-       if BASE_CARDS[c]["additional"] else 0)
-    for c in active_current
-)
+    st.write("Select active missions to see EV and discard recommendations for the current round.")
+    st.session_state.current_active_hand_ev = 0.0 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 11) Projection Panel
+# VP Summary & Projections
 # ─────────────────────────────────────────────────────────────────────────────
-projected_secondary = ev_active + future_ev.sum()
-current_vp          = START_VP + sec_total + pri_total
-projected_total     = current_vp + projected_secondary
+st.header("📊 VP Summary & Projections")
+summary_cols = st.columns(3)
 
-with proj_placeholder:
-    st.markdown("## 📊 Projected Victory Points")
-    p1, p2, p3 = st.columns(3)
-    p1.metric("Current VP",         f"{current_vp:.0f}")
-    p2.metric("EV Active Missions", f"{ev_active:.2f}")
-    p3.metric("Projected Total VP", f"{projected_total:.2f}")
-    st.markdown("---")
+current_grand_total_calc = sec_total + pri_total 
+start_vp_included_in_current_grand_label = ""
+if st.session_state.get('include_start_vp', True):
+    current_grand_total_calc += START_VP
+    start_vp_included_in_current_grand_label = " (incl. Start VP)"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 12) Detailed Results
-# ─────────────────────────────────────────────────────────────────────────────
-if len(future_rounds):
-    st.header("🎯 Expected by Future Rounds")
-    st.table(pd.DataFrame({
-        "Round":       [round_labels[r] for r in future_rounds],
-        "Expected VP": np.round(future_ev, 4)
-    }))
-    st.subheader("Cards to Redraw by Round")
-    st.table(redraw_df)
+summary_cols[0].metric("Total Scored Secondary VP", f"{int(sec_total)} VP")
+summary_cols[1].metric("Total Entered Primary VP", f"{int(pri_total)} VP") 
+summary_cols[2].metric(f"Current Grand Total{start_vp_included_in_current_grand_label}", f"{int(current_grand_total_calc)} VP")
+
+active_hand_ev_display_val = st.session_state.get('current_active_hand_ev', 0.0)
+if st.session_state.active_current and cur_round < MAX_ROUNDS: 
+    st.metric(f"EV of Active Hand (R{cur_round+1})", f"{active_hand_ev_display_val:.2f} VP",
+              help="Expected VPs from your currently selected active missions for this round, considering any probability adjustments you've made above.")
+
+sim_future_vp_val = st.session_state.get('total_sim_future_vp', 0.0) 
+
+sim_has_run_indicator = 'run_sim_button_main' in st.session_state and st.session_state.run_sim_button_main
+if sim_future_vp_val > 0 or sim_has_run_indicator : 
+    st.metric("Simulated Future Secondary VP", f"{sim_future_vp_val:.2f} VP",
+              help="Average VPs expected from secondary missions in future rounds, based on the last simulation run. This does NOT include the EV of your current active hand.")
+    
+    projected_total_vp_calc = sec_total + pri_total + sim_future_vp_val
+    start_vp_included_in_projected_label = ""
+    if st.session_state.get('include_start_vp', True):
+        projected_total_vp_calc += START_VP
+        start_vp_included_in_projected_label = " (incl. Start VP)"
+    
+    st.metric(f"Projected Game End Total VP{start_vp_included_in_projected_label}", f"{projected_total_vp_calc:.2f} VP",
+              help="Sum of current VPs and simulated future secondary VPs.")
 else:
-    st.info("No future rounds to simulate — you’ve logged all secondary scores.")
+    st.info("Run a 'Future Rounds Simulation' (in sidebar) to see projected VPs.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Future simulation
+# ─────────────────────────────────────────────────────────────────────────────
+def simulate_future(initial_deck_for_sim, current_app_round_sim, allow_discard_in_sim, num_trials, prob_events_data_sim): 
+    """Simulates future rounds: draw 2, optional discard/redraw (optimal for round), score."""
+    round_total_vps_sim = {r_sim_loop: 0.0 for r_sim_loop in range(current_app_round_sim + 1, MAX_ROUNDS)} 
+    for _ in range(num_trials):
+        trial_deck_sim = list(initial_deck_for_sim); random.shuffle(trial_deck_sim) 
+        for r_idx_sim, r_val_sim in enumerate(range(current_app_round_sim + 1, MAX_ROUNDS), start=current_app_round_sim + 1): 
+            current_sim_hand_trial = []; 
+            if len(trial_deck_sim) >= 2: current_sim_hand_trial = [trial_deck_sim.pop(0), trial_deck_sim.pop(0)]
+            elif len(trial_deck_sim) == 1: current_sim_hand_trial = [trial_deck_sim.pop(0)]
+            if not current_sim_hand_trial: continue
+            
+            final_hand_for_scoring_this_round_sim = list(current_sim_hand_trial) 
+            if allow_discard_in_sim and current_sim_hand_trial and trial_deck_sim: 
+                ev_current_sim_hand_this_round_sim = calculate_hand_ev_for_round(current_sim_hand_trial, r_val_sim, prob_events_data_sim, None) 
+                best_ev_after_discard_sim, card_to_discard_for_sim_trial = ev_current_sim_hand_this_round_sim, None 
+                
+                for card_to_try_discarding_sim in current_sim_hand_trial: 
+                    temp_hand_after_discard_sim = [c for c in current_sim_hand_trial if c != card_to_try_discarding_sim] 
+                    if trial_deck_sim: 
+                        potential_redraw_card_sim = trial_deck_sim[0]  
+                        hypothetical_hand_for_ev_sim = temp_hand_after_discard_sim + [potential_redraw_card_sim] 
+                        ev_hypothetical_sim = calculate_hand_ev_for_round(hypothetical_hand_for_ev_sim, r_val_sim, prob_events_data_sim, None) 
+                        if ev_hypothetical_sim > best_ev_after_discard_sim: best_ev_after_discard_sim, card_to_discard_for_sim_trial = ev_hypothetical_sim, card_to_try_discarding_sim
+                
+                if card_to_discard_for_sim_trial and trial_deck_sim: 
+                    final_hand_for_scoring_this_round_sim = [c for c in current_sim_hand_trial if c != card_to_discard_for_sim_trial]
+                    final_hand_for_scoring_this_round_sim.append(trial_deck_sim.pop(0))
+            
+            round_score_for_trial_sim = 0 
+            for card_name_in_scoring_hand_sim in final_hand_for_scoring_this_round_sim: 
+                if card_name_in_scoring_hand_sim in prob_events_data_sim:
+                    for pts, prs_list in prob_events_data_sim[card_name_in_scoring_hand_sim]:
+                        if 0 <= r_val_sim < len(prs_list) and random.random() < prs_list[r_val_sim] / 100.0: round_score_for_trial_sim += pts
+            round_total_vps_sim[r_val_sim] += round_score_for_trial_sim
+    return {r_avg: total_vp / num_trials for r_avg, total_vp in round_total_vps_sim.items()} 
+
+st.sidebar.header("Future Rounds Simulation")
+if cur_round < MAX_ROUNDS - 1:
+    n_trials_sim_widget = st.sidebar.number_input("Number of Trials ", min_value=100, max_value=100000, value=5000, step=100, key="n_trials_sim_main") 
+    allow_disc_sim_widget = st.sidebar.checkbox("Allow Discard/Redraw in Sim Rounds ", True, key="allow_disc_sim_main") 
+    
+    run_simulation_button = st.sidebar.button("Run Future Rounds Simulation ▶️ ", key="run_sim_button_main")
+    if run_simulation_button: 
+        if not AVAILABLE_DRAW_POOL or len(AVAILABLE_DRAW_POOL) < 1 : 
+             st.sidebar.warning("Not enough cards in Available Draw Pool for a typical simulation.")
+             st.session_state.total_sim_future_vp = 0.0 
+        else:
+            with st.spinner(f"Simulating {n_trials_sim_widget} trials for future rounds..."):
+                sim_results = simulate_future(list(AVAILABLE_DRAW_POOL), cur_round, allow_disc_sim_widget, n_trials_sim_widget, st.session_state.PROB_EVENTS)
+            
+            if sim_results:
+                df_res_list = [{"Sim. Round": r_num_res + 1, "Avg Future VP": round(vp_val_res, 2)} 
+                               for r_num_res, vp_val_res in sim_results.items() 
+                               if vp_val_res > 0 or r_num_res >= cur_round +1] 
+                
+                st.session_state.total_sim_future_vp = sum(item["Avg Future VP"] for item in df_res_list if "Avg Future VP" in item and isinstance(item["Avg Future VP"], (int, float)))
+                
+                if df_res_list: 
+                    st.sidebar.subheader("Simulation Results (Per Round)")
+                    st.sidebar.table(pd.DataFrame(df_res_list))
+                else: 
+                    st.sidebar.info("Simulation ran but produced no VPs for future rounds.")
+                    st.session_state.total_sim_future_vp = 0.0
+            else: 
+                st.sidebar.info("Simulation did not return results.")
+                st.session_state.total_sim_future_vp = 0.0
+        st.rerun() 
+else:
+    st.sidebar.info("Simulation available only before the last round.")
+
