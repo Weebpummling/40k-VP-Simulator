@@ -189,7 +189,7 @@ def calculate_opponent_future_secondary_vp(current_round_0_indexed, opponent_use
 # ─────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("General Settings")
 st.session_state.include_start_vp = st.sidebar.checkbox(
-    "Include Starting VP (10 VP) in Totals", 
+    "Include Painting VP (10 VP) in Totals", 
     value=st.session_state.include_start_vp,
     key="include_start_vp_checkbox"
 )
