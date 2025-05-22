@@ -46,7 +46,6 @@ COL_EVENT_ROUND_PROB_TPL = "E{}_r{}"
 if 'PROB_EVENTS' not in st.session_state:
     st.session_state.PROB_EVENTS = copy.deepcopy(DEFAULT_PROBS)
 
-# Robust initialization for scoreboard_data_list
 default_round_data = {
     's1': 0, 's2': 0, 'p': 0, 'used': [],
     'opp_s1': 0, 'opp_s2': 0, 'opp_p': 0, 'opp_used': []
@@ -54,13 +53,14 @@ default_round_data = {
 if 'scoreboard_data_list' not in st.session_state:
     st.session_state.scoreboard_data_list = [copy.deepcopy(default_round_data) for _ in range(MAX_ROUNDS)]
 else:
-    # Ensure existing list has the correct structure and length
-    # This handles upgrades from older session states
     for i in range(len(st.session_state.scoreboard_data_list)):
         for key, default_value in default_round_data.items():
-            st.session_state.scoreboard_data_list[i].setdefault(key, copy.deepcopy(default_value)) # Use deepcopy for lists
+            # For list defaults (like 'used'), ensure a new list is created if key is missing
+            if isinstance(default_value, list):
+                 st.session_state.scoreboard_data_list[i].setdefault(key, list(default_value))
+            else:
+                 st.session_state.scoreboard_data_list[i].setdefault(key, default_value)
     
-    # Ensure the list has exactly MAX_ROUNDS items
     while len(st.session_state.scoreboard_data_list) < MAX_ROUNDS:
         st.session_state.scoreboard_data_list.append(copy.deepcopy(default_round_data))
     if len(st.session_state.scoreboard_data_list) > MAX_ROUNDS:
@@ -369,7 +369,17 @@ if st.session_state.scoreboard_used_cards: st.sidebar.write(", ".join(sorted(lis
 else: st.sidebar.write("*None yet*")
 
 potential_cards_for_manual_removal = [c for c in CARD_LIST if c not in st.session_state.scoreboard_used_cards]
-selected_manual_removals = st.sidebar.multiselect("Manually Remove Cards from Your Deck:", options=sorted(potential_cards_for_manual_removal), default=list(st.session_state.manually_removed_cards), help="Select cards to remove from your draw pool.")
+# FIX for multiselect default error: Ensure default items are in options
+valid_defaults_for_manual_removal = [
+    card for card in st.session_state.manually_removed_cards 
+    if card in potential_cards_for_manual_removal
+]
+selected_manual_removals = st.sidebar.multiselect(
+    "Manually Remove Cards from Your Deck:", 
+    options=sorted(potential_cards_for_manual_removal), 
+    default=valid_defaults_for_manual_removal, # Use filtered list
+    help="Select cards to remove from your draw pool."
+)
 if set(selected_manual_removals) != st.session_state.manually_removed_cards:
     st.session_state.manually_removed_cards = set(selected_manual_removals)
     st.rerun() 
