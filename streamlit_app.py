@@ -4,21 +4,24 @@ import random
 import pandas as pd
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 0) Starting bonus
+# ─────────────────────────────────────────────────────────────────────────────
+
+START_VP = 10  # everyone starts with 10 free VPs
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 1) Helper functions
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_ev(events):
-    """Compute EV per round for mission cards (pts × pct/100)."""
     return [
         sum(pts * (probs[r] / 100) for pts, probs in events)
         for r in range(5)
     ]
 
 def score_card(events, round_idx):
-    """Sample each event once in round round_idx; sum all points scored."""
     return sum(
-        pts
-        for pts, probs in events
+        pts for pts, probs in events
         if random.random() < probs[round_idx] / 100
     )
 
@@ -47,11 +50,11 @@ BASE_CARDS = {
     "Establish Locus":        {"initial": (2, [100,80,80,80,80]),      "additional": (2, [0,0,40,50,70])},
 }
 
-round_labels = [f"Round {i+1}" for i in range(5)]
-forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
+round_labels   = [f"Round {i+1}" for i in range(5)]
+forbidden_r1   = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3) Command Points Tracker
+# 3) CP Tracker
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("🛡️ Command Points Tracker")
@@ -67,7 +70,7 @@ st.metric("Net CP", cp_gained - cp_spent)
 st.header("📋 Live Scoreboard & Cards Used")
 st.markdown(
     "🔎 **Note:** Enter completed **Secondary Scores** to exclude those rounds "
-    "from future simulations. **Primary Scores** are for reference and projections—"
+    "from future simulations. **Primary Scores** are for reference only—"
     "they do *not* exclude rounds."
 )
 
@@ -96,9 +99,9 @@ sec_total = sum(secondary_scores.values())
 pri_total = sum(primary_scores.values())
 st.markdown("---")
 t1, t2, t3 = st.columns(3)
-t1.metric("Secondary Total", sec_total)
-t2.metric("Primary Total",   pri_total)
-t3.metric("Scoreboard Sum",  sec_total + pri_total)
+t1.metric("Starting Bonus VP",   START_VP)
+t2.metric("Secondary Total",     sec_total)
+t3.metric("Primary Total",       pri_total)
 
 # Determine future rounds to simulate (exclude only if secondary_score > 0)
 included_idx = [i-1 for i in range(1,6) if secondary_scores[i] == 0]
@@ -109,7 +112,6 @@ included_idx = [i-1 for i in range(1,6) if secondary_scores[i] == 0]
 
 st.header("🎯 Your Mission Cards")
 
-# Probability categories for drop-downs
 categories = [
     "Guaranteed (100%)",
     "Highly Likely (80%)",
@@ -144,7 +146,7 @@ for card in selected:
         mapping[cols[j].selectbox(
             f"R{j+1} chance",
             options=categories,
-            index=3,  # default to "Maybe (50%)"
+            index=3,
             key=f"{card}_init_{j}"
         )] for j in range(5)
     ]
@@ -235,24 +237,18 @@ mission_ev, redraw_df = run_simulation(card_events)
 # ─────────────────────────────────────────────────────────────────────────────
 
 exp_mission   = mission_ev[included_idx].sum()
-projected_tot = sec_total + pri_total + exp_mission
+scoreboard_tot = START_VP + sec_total + pri_total
+projected_tot  = scoreboard_tot + exp_mission
 
 st.markdown("## 📊 Score Summary & Projection")
 m1, m2, m3 = st.columns(3)
-m1.metric("Scoreboard Total",    f"{sec_total+pri_total:.0f}")
-m2.metric("Expected Mission VP", f"{exp_mission:.2f}")
-m3.metric("Projected Total VP",  f"{projected_tot:.2f}")
+m1.metric("Starting + Scoreboard", f"{scoreboard_tot:.0f}")
+m2.metric("Expected Mission VP",   f"{exp_mission:.2f}")
+m3.metric("Projected Total VP",    f"{projected_tot:.2f}")
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 10) Detailed Results
 # ─────────────────────────────────────────────────────────────────────────────
 
-st.header("🎯 Mission VP by Future Rounds")
-st.table(pd.DataFrame({
-    "Round":       [round_labels[i] for i in included_idx],
-    "Expected VP": np.round(mission_ev[included_idx], 4)
-}))
-
-st.subheader("Cards to Redraw by Round")
-st.table(redraw_df)
+st.header("🎯 Missi
