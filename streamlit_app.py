@@ -18,6 +18,76 @@ profiles = ["Default"] + saved
 st.sidebar.header("🔖 Profile Manager")
 selected_profile = st.sidebar.selectbox("Load profile", profiles, index=0)
 
+import streamlit as st
+import numpy as np
+import random
+import pandas as pd
+import os
+import json
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1) Base card definitions — must come *before* load_default_template()
+# ─────────────────────────────────────────────────────────────────────────────
+BASE_CARDS = {
+    "Assassination":          {"initial": (5, [20,30,50,70,80]),       "additional": None},
+    "Containment":            {"initial": (3, [100,100,100,100,100]),  "additional": (3, [100,100,70,60,50])},
+    "Behind Enemy Lines":     {"initial": (3, [0,20,30,60,60]),        "additional": (1, [0,0,20,50,60])},
+    "Marked for Death":       {"initial": (5, [0,0,20,30,50]),         "additional": None},
+    "Bring it Down":          {"initial": (2, [0,50,60,70,80]),        "additional": (2, [0,40,50,60,70])},
+    "No Prisoners":           {"initial": (2, [20,80,90,90,90]),       "additional": (2, [0,60,70,80,80])},
+    "Defend Stronghold":      {"initial": (3, [0,100,100,100,100]),    "additional": None},
+    "Storm Hostile Objective":{"initial": (4, [0,60,70,80,60]),        "additional": None},
+    "Sabotage":               {"initial": (3, [100,90,80,70,60]),      "additional": (3, [0,0,0,0,10])},
+    "Cull the Horde":         {"initial": (5, [0,0,0,20,30]),          "additional": None},
+    "Overwhelming Force":     {"initial": (3, [10,70,70,80,80]),       "additional": (2, [0,30,70,80,70])},
+    "Extend Battlelines":     {"initial": (5, [100,100,100,90,90]),     "additional": None},
+    "Recover Assets":         {"initial": (3, [100,80,70,60,60]),      "additional": (6, [0,0,20,30,30])},
+    "Engage on All Fronts":   {"initial": (2, [80,30,50,70,80]),       "additional": (2, [0,30,40,50,60])},
+    "Area Denial":            {"initial": (2, [100,80,80,80,80]),      "additional": (3, [80,70,70,70,70])},
+    "Secure No Man's Land":   {"initial": (2, [100,100,100,100,100]),  "additional": (3, [80,80,70,70,70])},
+    "Cleanse":                {"initial": (2, [100,100,100,100,100]),  "additional": (2, [70,70,70,70,70])},
+    "Establish Locus":        {"initial": (2, [100,80,80,80,80]),      "additional": (2, [0,0,40,50,70])},
+}
+
+round_labels = [f"Round {i+1}" for i in range(5)]
+forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2) Profile Manager
+# ─────────────────────────────────────────────────────────────────────────────
+PROFILE_DIR = "profiles"
+os.makedirs(PROFILE_DIR, exist_ok=True)
+
+def load_default_template():
+    tpl = {}
+    for card, cfg in BASE_CARDS.items():
+        # initial VPs
+        for j, pct in enumerate(cfg["initial"][1]):
+            tpl[f"{card}_init_{j}"] = pct
+        # additional VPs
+        if cfg["additional"]:
+            for j, pct in enumerate(cfg["additional"][1]):
+                tpl[f"{card}_add_{j}"] = pct
+    return tpl
+
+profiles = ["Default"] + [f[:-5] for f in os.listdir(PROFILE_DIR) if f.endswith(".json")]
+st.sidebar.header("🔖 Profile Manager")
+selected_profile = st.sidebar.selectbox("Load profile", profiles)
+
+if selected_profile == "Default":
+    default_tpl = load_default_template()
+    for k, v in default_tpl.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+else:
+    with open(os.path.join(PROFILE_DIR, f"{selected_profile}.json")) as fp:
+        profile_data = json.load(fp)
+    for k, v in profile_data.items():
+        st.session_state[k] = v
+
+# ... rest of your import/CSV/save logic and then the simulation app ...
+
+
 def load_default_template():
     tpl = {}
     for card, cfg in BASE_CARDS.items():
@@ -77,33 +147,6 @@ def compute_ev(events):
 
 def score_card(events, r):
     return sum(pts for pts, probs in events if random.random() < probs[r]/100)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3) Base card definitions
-# ─────────────────────────────────────────────────────────────────────────────
-BASE_CARDS = {
-    "Assassination":          {"initial": (5, [20,30,50,70,80]),       "additional": None},
-    "Containment":            {"initial": (3, [100,100,100,100,100]),  "additional": (3, [100,100,70,60,50])},
-    "Behind Enemy Lines":     {"initial": (3, [0,20,30,60,60]),        "additional": (1, [0,0,20,50,60])},
-    "Marked for Death":       {"initial": (5, [0,0,20,30,50]),         "additional": None},
-    "Bring it Down":          {"initial": (2, [0,50,60,70,80]),        "additional": (2, [0,40,50,60,70])},
-    "No Prisoners":           {"initial": (2, [20,80,90,90,90]),       "additional": (2, [0,60,70,80,80])},
-    "Defend Stronghold":      {"initial": (3, [0,100,100,100,100]),    "additional": None},
-    "Storm Hostile Objective":{"initial": (4, [0,60,70,80,60]),        "additional": None},
-    "Sabotage":               {"initial": (3, [100,90,80,70,60]),      "additional": (3, [0,0,0,0,10])},
-    "Cull the Horde":         {"initial": (5, [0,0,0,20,30]),          "additional": None},
-    "Overwhelming Force":     {"initial": (3, [10,70,70,80,80]),       "additional": (2, [0,30,70,80,70])},
-    "Extend Battlelines":     {"initial": (5, [100,100,100,90,90]),     "additional": None},
-    "Recover Assets":         {"initial": (3, [100,80,70,60,60]),      "additional": (6, [0,0,20,30,30])},
-    "Engage on All Fronts":   {"initial": (2, [80,30,50,70,80]),       "additional": (2, [0,30,40,50,60])},
-    "Area Denial":            {"initial": (2, [100,80,80,80,80]),      "additional": (3, [80,70,70,70,70])},
-    "Secure No Man's Land":   {"initial": (2, [100,100,100,100,100]),  "additional": (3, [80,80,70,70,70])},
-    "Cleanse":                {"initial": (2, [100,100,100,100,100]),  "additional": (2, [70,70,70,70,70])},
-    "Establish Locus":        {"initial": (2, [100,80,80,80,80]),      "additional": (2, [0,0,40,50,70])},
-}
-
-round_labels = [f"Round {i+1}" for i in range(5)]
-forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4) CP Tracker
