@@ -22,13 +22,6 @@ def score_card(events, round_idx):
         if random.random() < probs[round_idx] / 100
     )
 
-def compute_primary_ev(distribution):
-    """Compute EV per round for an exclusive primary-VP distribution."""
-    return [
-        sum(pts * (p[r] / 100) for pts, p in distribution)
-        for r in range(5)
-    ]
-
 # ─────────────────────────────────────────────────────────────────────────────
 # 2) Base card definitions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -63,20 +56,38 @@ forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Li
 
 st.header("Scoreboard & Cards Used")
 
+# Probability categories mapping
+categories = [
+    "Guaranteed (100%)",
+    "Highly Likely (80%)",
+    "Likely (70%)",
+    "Maybe (50%)",
+    "Unlikely (30%)",
+    "Highly Unlikely (10%)"
+]
+mapping = {
+    "Guaranteed (100%)": 100,
+    "Highly Likely (80%)": 80,
+    "Likely (70%)": 70,
+    "Maybe (50%)": 50,
+    "Unlikely (30%)": 30,
+    "Highly Unlikely (10%)": 10
+}
+
 secondary_scores = {}
-primary_scores   = {}
 removed_cards_all = set()
 
 for i in range(1, 6):
     st.subheader(f"Round {i}")
-    c1, c2, c3 = st.columns([2,2,4])
-    secondary_scores[i] = c1.number_input(
-        f"Secondary Score R{i}", min_value=0, value=0, step=1, key=f"sec_{i}"
+    c1, c2 = st.columns([2,4])
+    choice = c1.selectbox(
+        f"Secondary Score R{i}",
+        options=categories,
+        index=3,  # default "Maybe"
+        key=f"sec_{i}"
     )
-    primary_scores[i] = c2.number_input(
-        f"Primary Score R{i}",   min_value=0, value=0, step=1, key=f"pri_{i}"
-    )
-    used = c3.multiselect(
+    secondary_scores[i] = mapping[choice]
+    used = c2.multiselect(
         f"Cards used in R{i} (remove from pool)",
         options=list(BASE_CARDS.keys()),
         key=f"used_{i}"
@@ -89,10 +100,11 @@ for i in range(1, 6):
 
 st.header("Your Mission Cards")
 
+available_cards = [c for c in BASE_CARDS if c not in removed_cards_all]
 selected = st.multiselect(
     "Choose your cards",
-    options=[c for c in BASE_CARDS if c not in removed_cards_all],
-    default=[c for c in BASE_CARDS if c not in removed_cards_all]
+    options=available_cards,
+    default=available_cards
 )
 
 card_events = {}
@@ -102,44 +114,40 @@ for card in selected:
     st.markdown(f"**{card}** — Initial VP: {cfg['initial'][0]}")
     cols = st.columns(5)
     probs = [
-        cols[j].number_input(
-            f"{card} R{j+1} (%)", 0, 100, cfg['initial'][1][j],
+        mapping[cols[j].selectbox(
+            f"R{j+1} chance",
+            options=categories,
+            index=categories.index("Guaranteed (100%)" if cfg['initial'][1][j]==100 else
+                                     "Highly Likely (80%)" if cfg['initial'][1][j]==80 else
+                                     "Likely (70%)" if cfg['initial'][1][j]==70 else
+                                     "Maybe (50%)" if cfg['initial'][1][j]==50 else
+                                     "Unlikely (30%)"),
             key=f"{card}_init_{j}"
-        ) for j in range(5)
+        )]
+        for j in range(5)
     ]
     evs.append((cfg['initial'][0], probs))
     if cfg['additional']:
         st.markdown(f"{card} — Additional VP: {cfg['additional'][0]}")
         cols2 = st.columns(5)
         probs2 = [
-            cols2[j].number_input(
-                f"{card} R{j+1} add (%)", 0, 100, cfg['additional'][1][j],
+            mapping[cols2[j].selectbox(
+                f"R{j+1} additional",
+                options=categories,
+                index=categories.index("Guaranteed (100%)" if cfg['additional'][1][j]==100 else
+                                         "Highly Likely (80%)" if cfg['additional'][1][j]==80 else
+                                         "Likely (70%)" if cfg['additional'][1][j]==70 else
+                                         "Maybe (50%)" if cfg['additional'][1][j]==50 else
+                                         "Unlikely (30%)"),
                 key=f"{card}_add_{j}"
-            ) for j in range(5)
+            )]
+            for j in range(5)
         ]
         evs.append((cfg['additional'][0], probs2))
     card_events[card] = evs
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5) Your primary‐VP distribution
-# ─────────────────────────────────────────────────────────────────────────────
-
-st.header("Your Primary VP Distribution")
-
-n_outcomes = st.number_input("Number of primary outcomes", 1, 5, 2)
-primary_dist = []
-for idx in range(n_outcomes):
-    pts = st.number_input(f"Outcome {idx+1} VP", 0, 10, idx, key=f"pr_pts_{idx}")
-    cols = st.columns(5)
-    p = [
-        cols[j].number_input(
-            f"R{j+1} (%)", 0, 100, 0, key=f"pr_{idx}_{j}"
-        ) for j in range(5)
-    ]
-    primary_dist.append((pts, p))
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 6) Sidebar form: settings + run guard
+# 5) Sidebar form: settings + run guard
 # ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar.form("settings_form"):
@@ -156,7 +164,7 @@ if not run_sim:
     st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7) Parse settings & prepare
+# 6) Parse settings & prepare
 # ─────────────────────────────────────────────────────────────────────────────
 
 if seed_str:
@@ -165,7 +173,7 @@ if seed_str:
 included_idx = [round_labels.index(r) for r in included]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8) Simulation helper
+# 7) Simulation helper
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_simulation(card_events):
@@ -206,10 +214,9 @@ def run_simulation(card_events):
     return scores.mean(axis=0), df_redraw
 
 mission_ev, redraw_df = run_simulation(card_events)
-primary_ev    = compute_primary_ev(primary_dist)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9) Display results
+# 8) Display results
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("Results — Your Side")
@@ -219,31 +226,19 @@ st.table(pd.DataFrame({
     "Expected VP": np.round(mission_ev[included_idx], 4)
 }))
 
-st.subheader("Primary VP by Round")
-st.table(pd.DataFrame({
-    "Round":       round_labels,
-    "Expected VP": np.round(primary_ev, 4)
-}))
-
 st.subheader("Cards to Redraw by Round")
 st.table(redraw_df)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 10) Total Expected VP (including scoreboard)
+# 9) Total Expected VP (including scoreboard)
 # ─────────────────────────────────────────────────────────────────────────────
 
-mission_total  = mission_ev[included_idx].sum()
-primary_total  = sum(primary_ev)
-secondary_total = sum(secondary_scores.values())
-primary_score_total = sum(primary_scores.values())
-
-# incorporate scoreboard
-sec_total      = secondary_total + mission_total
-pri_total      = primary_score_total + primary_total
-combined_total = sec_total + pri_total
+mission_total      = mission_ev[included_idx].sum()
+secondary_total    = sum(secondary_scores.values())
+combined_total     = mission_total + secondary_total
 
 st.markdown("---")
 c1, c2, c3 = st.columns(3)
-c1.metric("Secondary+Mission Total", f"{sec_total:.2f}")
-c2.metric("Primary+PrimaryEV Total", f"{pri_total:.2f}")
-c3.metric("Overall Combined VP",       f"{combined_total:.2f}")
+c1.metric("Mission VP Total",   f"{mission_total:.2f}")
+c2.metric("Secondary Score Total", f"{secondary_total:.2f}")
+c3.metric("Overall Combined VP",   f"{combined_total:.2f}")
