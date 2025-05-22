@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit import column_config
 import pandas as pd
 import numpy as np
 import random
@@ -53,7 +54,7 @@ base_events = {
     "Area Denial":          [(2,[100,80,80,80,80]), (3,[80,70,70,70,70])],
     "Secure No Man's Land": [(2,[100,100,100,100,100]), (3,[80,80,70,70,70])],
     "Cleanse":              [(2,[100,100,100,100,100]), (2,[70,70,70,70,70])],
-    "Establish Locus":      [(2,[100,80,80,80,80]), (2,[0,0,40,50,70])]
+    "Establish Locus":      [(2,[100,80,80,80,80]), (2,[0,0,40,50,70])],
 }
 
 # Build DataFrame: one row per card
@@ -86,17 +87,16 @@ df = pd.DataFrame(rows, columns=columns)
 # 3) Editable table: lock Card & VP columns, only (%) and Active editable
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Build column_config for st.data_editor
 col_config = {}
 for col in df.columns:
     if col == "Active":
-        col_config[col] = st.column_config.BooleanColumn(label="Include Card")
+        col_config[col] = column_config.BooleanColumn(label="Include Card")
     elif col == "Card":
-        col_config[col] = st.column_config.StringColumn(label="Card Name", disabled=True)
-    elif col in ["Initial VP", "Additional VP"]:
-        col_config[col] = st.column_config.NumberColumn(label=col, disabled=True)
+        col_config[col] = column_config.StringColumn(label="Card Name", disabled=True)
+    elif col in ("Initial VP", "Additional VP"):
+        col_config[col] = column_config.NumberColumn(label=col, disabled=True)
     elif col.endswith("(%)"):
-        col_config[col] = st.column_config.NumberColumn(
+        col_config[col] = column_config.NumberColumn(
             label=col, min_value=0, max_value=100, step=1
         )
 
@@ -129,7 +129,7 @@ for _, r in edited[edited["Active"]].iterrows():
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.sidebar.header("Simulation Settings")
-n_trials      = st.sidebar.number_input("Monte Carlo Trials", 1000, 200_000, 30_000, 1000)
+n_trials      = st.sidebar.number_input("Monte Carlo Trials", 1000, 200000, 30000, 1000)
 seed_in       = st.sidebar.text_input("Random Seed (optional)")
 if seed_in.strip():
     s = int(seed_in); random.seed(s); np.random.seed(s)
