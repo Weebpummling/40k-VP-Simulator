@@ -28,27 +28,27 @@ def score_card(events, round_idx):
 
 BASE_CARDS = {
     "Assassination":         {"initial": (5, [20,30,50,70,80]),      "additional": None},
-    "Containment":           {"initial": (3, [100,100,100,100,100]), "additional": (3,[100,100,70,60,50])},
-    "Behind Enemy Lines":    {"initial": (3, [0,20,30,60,60]),       "additional": (1,[0,0,20,50,60])},
+    "Containment":           {"initial": (3, [100,100,100,100,100]), "additional": (3, [100,100,70,60,50])},
+    "Behind Enemy Lines":    {"initial": (3, [0,20,30,60,60]),       "additional": (1, [0,0,20,50,60])},
     "Marked for Death":      {"initial": (5, [0,0,20,30,50]),        "additional": None},
-    "Bring it Down":         {"initial": (2, [0,50,60,70,80]),       "additional": (2,[0,40,50,60,70])},
-    "No Prisoners":          {"initial": (2, [20,80,90,90,90]),      "additional": (2,[0,60,70,80,80])},
+    "Bring it Down":         {"initial": (2, [0,50,60,70,80]),       "additional": (2, [0,40,50,60,70])},
+    "No Prisoners":          {"initial": (2, [20,80,90,90,90]),      "additional": (2, [0,60,70,80,80])},
     "Defend Stronghold":     {"initial": (3, [0,100,100,100,100]),   "additional": None},
-    "Storm Hostile Objective":{"initial": (4,[0,60,70,80,60]),      "additional": None},
-    "Sabotage":              {"initial": (3, [100,90,80,70,60]),     "additional": (3,[0,0,0,0,10])},
+    "Storm Hostile Objective":{"initial": (4, [0,60,70,80,60]),     "additional": None},
+    "Sabotage":              {"initial": (3, [100,90,80,70,60]),     "additional": (3, [0,0,0,0,10])},
     "Cull the Horde":        {"initial": (5, [0,0,0,20,30]),         "additional": None},
-    "Overwhelming Force":    {"initial": (3, [10,70,70,80,80]),      "additional": (2,[0,30,70,80,70])},
+    "Overwhelming Force":    {"initial": (3, [10,70,70,80,80]),      "additional": (2, [0,30,70,80,70])},
     "Extend Battlelines":    {"initial": (5, [100,100,100,90,90]),    "additional": None},
-    "Recover Assets":        {"initial": (3, [100,80,70,60,60]),     "additional": (6,[0,0,20,30,30])},
-    "Engage on All Fronts":  {"initial": (2, [80,30,50,70,80]),      "additional": (2,[0,30,40,50,60])},
-    "Area Denial":           {"initial": (2, [100,80,80,80,80]),     "additional": (3,[80,70,70,70,70])},
-    "Secure No Man's Land":  {"initial": (2, [100,100,100,100,100]), "additional": (3,[80,80,70,70,70])},
-    "Cleanse":               {"initial": (2, [100,100,100,100,100]), "additional": (2,[70,70,70,70,70])},
-    "Establish Locus":       {"initial": (2, [100,80,80,80,80]),     "additional": (2,[0,0,40,50,70])},
+    "Recover Assets":        {"initial": (3, [100,80,70,60,60]),     "additional": (6, [0,0,20,30,30])},
+    "Engage on All Fronts":   {"initial": (2, [80,30,50,70,80]),     "additional": (2, [0,30,40,50,60])},
+    "Area Denial":           {"initial": (2, [100,80,80,80,80]),     "additional": (3, [80,70,70,70,70])},
+    "Secure No Man's Land":  {"initial": (2, [100,100,100,100,100]), "additional": (3, [80,80,70,70,70])},
+    "Cleanse":               {"initial": (2, [100,100,100,100,100]), "additional": (2, [70,70,70,70,70])},
+    "Establish Locus":       {"initial": (2, [100,80,80,80,80]),     "additional": (2, [0,0,40,50,70])},
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3) UI: select cards & input probabilities
+# 3) UI: select cards & set probabilities
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.title("40K Mission VP Simulator")
@@ -73,12 +73,13 @@ for card in selected:
         probs_init.append(
             col.number_input(
                 f"R{i} chance (%)",
-                0, 100, def_init[i-1],
+                min_value=0, max_value=100,
+                value=def_init[i-1],
                 key=f"{card}_init_{i}"
             )
         )
     evs.append((pts_init, probs_init))
-    # Additional VP if any
+    # Additional VP
     if cfg["additional"]:
         pts_add, def_add = cfg["additional"]
         st.markdown(f"{card} — Additional VP: {pts_add}")
@@ -88,7 +89,8 @@ for card in selected:
             probs_add.append(
                 col.number_input(
                     f"R{i} additional (%)",
-                    0, 100, def_add[i-1],
+                    min_value=0, max_value=100,
+                    value=def_add[i-1],
                     key=f"{card}_add_{i}"
                 )
             )
@@ -96,47 +98,43 @@ for card in selected:
     card_events[card] = evs
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4) Sidebar: settings + run button using session_state
+# 4) Sidebar form: settings + submit button
 # ─────────────────────────────────────────────────────────────────────────────
 
-# initialize run_sim flag
-if "run_sim" not in st.session_state:
-    st.session_state.run_sim = False
+round_labels = [f"Round {i+1}" for i in range(5)]
+with st.sidebar.form("settings_form"):
+    st.header("Simulation Settings")
+    n_trials      = st.number_input("Trials", 1000, 200000, 30000, 1000)
+    seed_str      = st.text_input("Random Seed (optional)")
+    apply_r1      = st.checkbox("Apply Round-1 Reshuffle Rule", True)
+    allow_discard = st.checkbox("Allow Discard/Redraw", True)
+    included      = st.multiselect("Include Rounds", round_labels, default=round_labels)
+    run_sim       = st.form_submit_button("Run Simulation ▶️")
 
-# sidebar inputs
-n_trials      = st.sidebar.number_input("Trials", 1000, 200_000, 30_000, 1000)
-seed_str      = st.sidebar.text_input("Random Seed (optional)")
-apply_r1      = st.sidebar.checkbox("Apply Round-1 Reshuffle Rule", True)
-allow_discard = st.sidebar.checkbox("Allow Discard/Redraw", True)
-round_labels  = [f"Round {i+1}" for i in range(5)]
-included      = st.sidebar.multiselect("Include Rounds", round_labels, default=round_labels)
+# ─────────────────────────────────────────────────────────────────────────────
+# 5) Guard: only run below if button pressed
+# ─────────────────────────────────────────────────────────────────────────────
 
-# run button
-if st.sidebar.button("Run Simulation ▶️"):
-    st.session_state.run_sim = True
-
-# gate execution
-if not st.session_state.run_sim:
-    st.info("Adjust settings above, then click ▶️ Run Simulation.")
+if not run_sim:
+    st.info("Configure cards and settings, then click ▶️ Run Simulation.")
     st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5) Parse settings & prepare
+# 6) Parse settings & prepare
 # ─────────────────────────────────────────────────────────────────────────────
 
-# seed
 if seed_str:
-    s = int(seed_str)
-    random.seed(s)
-    np.random.seed(s)
+    seed = int(seed_str)
+    random.seed(seed)
+    np.random.seed(seed)
 
 included_idx = [round_labels.index(r) for r in included]
 forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
-# precompute EVs
+# Precompute EVs
 card_ev = {c: compute_ev(evs) for c, evs in card_events.items()}
 
-# determine cards to redraw
+# Determine cards to redraw
 cards_to_redraw = {}
 for r in included_idx:
     pool = [
@@ -152,7 +150,7 @@ df_redraw = pd.DataFrame({
 })
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6) Monte Carlo simulation
+# 7) Monte Carlo simulation
 # ─────────────────────────────────────────────────────────────────────────────
 
 scores = np.zeros((n_trials, 5))
@@ -165,7 +163,6 @@ for t in range(n_trials):
         if not pool:
             continue
         hand = random.sample(pool, 2)
-
         if allow_discard:
             evs = [card_ev[c][r] for c in hand]
             rem = [c for c in pool if c not in hand]
@@ -174,11 +171,10 @@ for t in range(n_trials):
                 idx = int(np.argmin(evs))
                 discards.add(hand[idx])
                 hand[idx] = random.choice(rem) if rem else hand[idx]
-
         scores[t, r] = sum(score_card(card_events[c], r) for c in hand)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7) Display results
+# 8) Display results
 # ─────────────────────────────────────────────────────────────────────────────
 
 exp_vp = np.round(scores.mean(axis=0), 4)
