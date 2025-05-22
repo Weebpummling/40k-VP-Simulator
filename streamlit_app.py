@@ -51,7 +51,7 @@ round_labels = [f"Round {i+1}" for i in range(5)]
 forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3) CP Tracker
+# 3) Command Points Tracker
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("🛡️ Command Points Tracker")
@@ -61,10 +61,15 @@ cp_spent  = cps.number_input("CP Spent",  min_value=0, value=0, step=1)
 st.metric("Net CP", cp_gained - cp_spent)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4) Live scoreboard & cards used per round
+# 4) Live Scoreboard & Cards Used
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("📋 Live Scoreboard & Cards Used")
+st.markdown(
+    "🔎 **Note:** Enter completed **Secondary Scores** to exclude those rounds "
+    "from future simulations. **Primary Scores** are for reference and projections—"
+    "they do *not* exclude rounds."
+)
 
 secondary_scores = {}
 primary_scores   = {}
@@ -95,19 +100,16 @@ t1.metric("Secondary Total", sec_total)
 t2.metric("Primary Total",   pri_total)
 t3.metric("Scoreboard Sum",  sec_total + pri_total)
 
-# Determine future rounds to simulate
-included_idx = [
-    i-1 for i in range(1,6)
-    if secondary_scores[i] == 0 and primary_scores[i] == 0
-]
+# Determine future rounds to simulate (exclude only if secondary_score > 0)
+included_idx = [i-1 for i in range(1,6) if secondary_scores[i] == 0]
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5) Mission cards input
+# 5) Mission Cards Input
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("🎯 Your Mission Cards")
 
-# Probability categories
+# Probability categories for drop-downs
 categories = [
     "Guaranteed (100%)",
     "Highly Likely (80%)",
@@ -142,9 +144,7 @@ for card in selected:
         mapping[cols[j].selectbox(
             f"R{j+1} chance",
             options=categories,
-            index=categories.index(
-                f"{cfg['initial'][1][j]}%" if f"{cfg['initial'][1][j]}%" in categories else "Maybe (50%)"
-            ),
+            index=3,  # default to "Maybe (50%)"
             key=f"{card}_init_{j}"
         )] for j in range(5)
     ]
@@ -156,9 +156,7 @@ for card in selected:
             mapping[cols2[j].selectbox(
                 f"R{j+1} add",
                 options=categories,
-                index=categories.index(
-                    f"{cfg['additional'][1][j]}%" if f"{cfg['additional'][1][j]}%" in categories else "Maybe (50%)"
-                ),
+                index=3,
                 key=f"{card}_add_{j}"
             )] for j in range(5)
         ]
