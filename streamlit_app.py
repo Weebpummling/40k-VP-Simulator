@@ -14,14 +14,17 @@ START_VP = 10  # everyone starts with 10 free VPs
 # ─────────────────────────────────────────────────────────────────────────────
 
 def compute_ev(events):
+    """Compute EV per round for mission cards (pts × pct/100)."""
     return [
         sum(pts * (probs[r] / 100) for pts, probs in events)
         for r in range(5)
     ]
 
 def score_card(events, round_idx):
+    """Sample each event once in round round_idx; sum all points scored."""
     return sum(
-        pts for pts, probs in events
+        pts
+        for pts, probs in events
         if random.random() < probs[round_idx] / 100
     )
 
@@ -99,9 +102,9 @@ sec_total = sum(secondary_scores.values())
 pri_total = sum(primary_scores.values())
 st.markdown("---")
 t1, t2, t3 = st.columns(3)
-t1.metric("Starting Bonus VP",   START_VP)
-t2.metric("Secondary Total",     sec_total)
-t3.metric("Primary Total",       pri_total)
+t1.metric("Starting Bonus VP", START_VP)
+t2.metric("Secondary Total",    sec_total)
+t3.metric("Primary Total",      pri_total)
 
 # Determine future rounds to simulate (exclude only if secondary_score > 0)
 included_idx = [i-1 for i in range(1,6) if secondary_scores[i] == 0]
@@ -233,18 +236,17 @@ def run_simulation(card_events):
 mission_ev, redraw_df = run_simulation(card_events)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9) Summary Metrics at Top of Results
+# 9) Summary Metrics near Top of Results
 # ─────────────────────────────────────────────────────────────────────────────
 
-exp_mission   = mission_ev[included_idx].sum()
+exp_mission    = mission_ev[included_idx].sum()
 scoreboard_tot = START_VP + sec_total + pri_total
 projected_tot  = scoreboard_tot + exp_mission
 
-st.markdown("## 📊 Score Summary & Projection")
-m1, m2, m3 = st.columns(3)
-m1.metric("Starting + Scoreboard", f"{scoreboard_tot:.0f}")
-m2.metric("Expected Mission VP",   f"{exp_mission:.2f}")
-m3.metric("Projected Total VP",    f"{projected_tot:.2f}")
+st.markdown("## 📊 Projected Victory Points")
+m1, m2 = st.columns(2)
+m1.metric("Current+Bonus+Scoreboard", f"{scoreboard_tot:.0f}")
+m2.metric("Projected Total VP",      f"{projected_tot:.2f}")
 st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
