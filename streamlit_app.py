@@ -51,51 +51,58 @@ round_labels = [f"Round {i+1}" for i in range(5)]
 forbidden_r1 = {"Storm Hostile Objective", "Defend Stronghold", "Behind Enemy Lines"}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3) Scoreboard & used‐cards input per round
+# 3) CP Tracker
 # ─────────────────────────────────────────────────────────────────────────────
 
-st.header("Scoreboard & Cards Used")
+st.header("Command Points Tracker")
+cpg, cps = st.columns(2)
+cp_gained = cpg.number_input("CP Gained", min_value=0, value=0, step=1)
+cp_spent  = cps.number_input("CP Spent",  min_value=0, value=0, step=1)
+st.metric("Current CP", cp_gained - cp_spent)
 
-# Probability categories mapping
-categories = [
-    "Guaranteed (100%)",
-    "Highly Likely (80%)",
-    "Likely (70%)",
-    "Maybe (50%)",
-    "Unlikely (30%)",
-    "Highly Unlikely (10%)"
-]
-mapping = {
-    "Guaranteed (100%)": 100,
-    "Highly Likely (80%)": 80,
-    "Likely (70%)": 70,
-    "Maybe (50%)": 50,
-    "Unlikely (30%)": 30,
-    "Highly Unlikely (10%)": 10
-}
+# ─────────────────────────────────────────────────────────────────────────────
+# 4) Live scoreboard & cards used per round
+# ─────────────────────────────────────────────────────────────────────────────
+
+st.header("Live Scoreboard & Cards Used")
 
 secondary_scores = {}
+primary_scores   = {}
 removed_cards_all = set()
 
 for i in range(1, 6):
     st.subheader(f"Round {i}")
-    c1, c2 = st.columns([2,4])
-    choice = c1.selectbox(
-        f"Secondary Score R{i}",
-        options=categories,
-        index=3,  # default "Maybe"
-        key=f"sec_{i}"
+    c1, c2, c3 = st.columns([2,2,4])
+    secondary_scores[i] = c1.number_input(
+        f"Secondary Score R{i}", min_value=0, value=0, step=1, key=f"sec_{i}"
     )
-    secondary_scores[i] = mapping[choice]
-    used = c2.multiselect(
-        f"Cards used in R{i} (remove from pool)",
+    primary_scores[i] = c2.number_input(
+        f"Primary Score R{i}",   min_value=0, value=0, step=1, key=f"pri_{i}"
+    )
+    used = c3.multiselect(
+        f"Cards used in R{i}",
         options=list(BASE_CARDS.keys()),
         key=f"used_{i}"
     )
     removed_cards_all.update(used)
 
+# Totals right under scoreboard
+sec_total = sum(secondary_scores.values())
+pri_total = sum(primary_scores.values())
+st.markdown("---")
+c1, c2, c3 = st.columns(3)
+c1.metric("Secondary Total", sec_total)
+c2.metric("Primary Total",   pri_total)
+c3.metric("Scoreboard Sum",  sec_total + pri_total)
+
+# Determine which future rounds to simulate
+included_idx = [
+    i-1 for i in range(1,6)
+    if secondary_scores[i] == 0 and primary_scores[i] == 0
+]
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 4) Your mission‐cards input
+# 5) Your mission‐cards input (exclude used cards)
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("Your Mission Cards")
@@ -114,16 +121,12 @@ for card in selected:
     st.markdown(f"**{card}** — Initial VP: {cfg['initial'][0]}")
     cols = st.columns(5)
     probs = [
-        mapping[cols[j].selectbox(
-            f"R{j+1} chance",
-            options=categories,
-            index=categories.index("Guaranteed (100%)" if cfg['initial'][1][j]==100 else
-                                     "Highly Likely (80%)" if cfg['initial'][1][j]==80 else
-                                     "Likely (70%)" if cfg['initial'][1][j]==70 else
-                                     "Maybe (50%)" if cfg['initial'][1][j]==50 else
-                                     "Unlikely (30%)"),
+        cols[j].number_input(
+            f"{card} R{j+1} chance (%)",
+            min_value=0, max_value=100,
+            value=cfg['initial'][1][j],
             key=f"{card}_init_{j}"
-        )]
+        )
         for j in range(5)
     ]
     evs.append((cfg['initial'][0], probs))
@@ -131,23 +134,19 @@ for card in selected:
         st.markdown(f"{card} — Additional VP: {cfg['additional'][0]}")
         cols2 = st.columns(5)
         probs2 = [
-            mapping[cols2[j].selectbox(
-                f"R{j+1} additional",
-                options=categories,
-                index=categories.index("Guaranteed (100%)" if cfg['additional'][1][j]==100 else
-                                         "Highly Likely (80%)" if cfg['additional'][1][j]==80 else
-                                         "Likely (70%)" if cfg['additional'][1][j]==70 else
-                                         "Maybe (50%)" if cfg['additional'][1][j]==50 else
-                                         "Unlikely (30%)"),
+            cols2[j].number_input(
+                f"{card} R{j+1} add (%)",
+                min_value=0, max_value=100,
+                value=cfg['additional'][1][j],
                 key=f"{card}_add_{j}"
-            )]
+            )
             for j in range(5)
         ]
         evs.append((cfg['additional'][0], probs2))
     card_events[card] = evs
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5) Sidebar form: settings + run guard
+# 6) Sidebar form: settings + run guard
 # ─────────────────────────────────────────────────────────────────────────────
 
 with st.sidebar.form("settings_form"):
@@ -156,7 +155,6 @@ with st.sidebar.form("settings_form"):
     seed_str      = st.text_input("Random Seed (optional)")
     apply_r1      = st.checkbox("Apply Round-1 Reshuffle Rule", True)
     allow_discard = st.checkbox("Allow Discard/Redraw", True)
-    included      = st.multiselect("Include Rounds", round_labels, default=round_labels)
     run_sim       = st.form_submit_button("Run Simulation ▶️")
 
 if not run_sim:
@@ -164,16 +162,14 @@ if not run_sim:
     st.stop()
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6) Parse settings & prepare
+# 7) Parse settings & prepare
 # ─────────────────────────────────────────────────────────────────────────────
 
 if seed_str:
     random.seed(int(seed_str)); np.random.seed(int(seed_str))
 
-included_idx = [round_labels.index(r) for r in included]
-
 # ─────────────────────────────────────────────────────────────────────────────
-# 7) Simulation helper
+# 8) Simulation helper
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_simulation(card_events):
@@ -195,7 +191,7 @@ def run_simulation(card_events):
     scores = np.zeros((n_trials, 5))
     for t in range(n_trials):
         disc = set()
-        for r in range(5):
+        for r in included_idx:
             pool = [c for c in card_events if c not in disc]
             if r == 0 and apply_r1:
                 pool = [c for c in pool if c not in forbidden_r1]
@@ -213,16 +209,17 @@ def run_simulation(card_events):
             scores[t, r] = sum(score_card(card_events[c], r) for c in hand)
     return scores.mean(axis=0), df_redraw
 
+# Run simulation for future rounds
 mission_ev, redraw_df = run_simulation(card_events)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8) Display results
+# 9) Display results
 # ─────────────────────────────────────────────────────────────────────────────
 
 st.header("Results — Your Side")
-st.subheader("Mission VP by Round")
+st.subheader("Mission VP by Future Rounds")
 st.table(pd.DataFrame({
-    "Round":       [f"Round {i+1}" for i in included_idx],
+    "Round":       [round_labels[i] for i in included_idx],
     "Expected VP": np.round(mission_ev[included_idx], 4)
 }))
 
@@ -230,15 +227,16 @@ st.subheader("Cards to Redraw by Round")
 st.table(redraw_df)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9) Total Expected VP (including scoreboard)
+# 10) Total Expected VP (including live scoreboard)
 # ─────────────────────────────────────────────────────────────────────────────
 
-mission_total      = mission_ev[included_idx].sum()
-secondary_total    = sum(secondary_scores.values())
-combined_total     = mission_total + secondary_total
+mission_total    = mission_ev[included_idx].sum()
+secondary_total  = sum(secondary_scores[i] for i in included_idx)
+primary_score_total = sum(primary_scores[i] for i in included_idx)
+combined_total   = mission_total + secondary_total + primary_score_total
 
 st.markdown("---")
 c1, c2, c3 = st.columns(3)
-c1.metric("Mission VP Total",   f"{mission_total:.2f}")
-c2.metric("Secondary Score Total", f"{secondary_total:.2f}")
-c3.metric("Overall Combined VP",   f"{combined_total:.2f}")
+c1.metric("Mission EV Total",       f"{mission_total:.2f}")
+c2.metric("Scoreboard Sec+Pri Total",f"{secondary_total+primary_score_total:.2f}")
+c3.metric("Overall Combined VP",     f"{combined_total:.2f}")
