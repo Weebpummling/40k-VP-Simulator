@@ -1,0 +1,1 @@
+A 40k VP simulator to assist in list building decisions, and in game VP expected value information to help with secondary mission score planning. Allows the users to more accurately assess probabilities of win based on the possible VP gains to more efficiently identify optimal lines of play.
