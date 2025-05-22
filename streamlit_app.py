@@ -134,7 +134,7 @@ mapping = {
 
 available_cards = [c for c in BASE_CARDS if c not in removed_cards_all]
 selected = st.multiselect(
-    "Select cards to include",
+    "Select cards to include and remove unscorable cards!",
     options=available_cards,
     default=available_cards
 )
@@ -236,18 +236,19 @@ def run_simulation(card_events):
 mission_ev, redraw_df = run_simulation(card_events)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 9) Summary Metrics near Top of Results
+# 9) Projected Victory Points at Top
 # ─────────────────────────────────────────────────────────────────────────────
-
 exp_mission    = mission_ev[included_idx].sum()
 scoreboard_tot = START_VP + sec_total + pri_total
 projected_tot  = scoreboard_tot + exp_mission
 
-st.markdown("## 📊 Projected Victory Points")
-m1, m2 = st.columns(2)
-m1.metric("Current+Bonus+Scoreboard", f"{scoreboard_tot:.0f}")
-m2.metric("Projected Total VP",      f"{projected_tot:.2f}")
-st.markdown("---")
+with proj_placeholder:
+    st.markdown("## 📊 Projected Victory Points")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Secondary Total VP",      f"{sec_total:.0f}")
+    m2.metric("Current+Bonus+Scoreboard",f"{scoreboard_tot:.0f}")
+    m3.metric("Projected Total VP",      f"{projected_tot:.2f}")
+    st.markdown("---")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 10) Detailed Results
