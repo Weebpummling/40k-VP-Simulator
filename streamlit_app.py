@@ -51,7 +51,7 @@ if 'PROB_EVENTS' not in st.session_state:
 if 'OPPONENT_PROB_EVENTS' not in st.session_state: 
     st.session_state.OPPONENT_PROB_EVENTS = copy.deepcopy(DEFAULT_PROBS)
 
-if 'player_order' not in st.session_state: # New state for player order
+if 'player_order' not in st.session_state: 
     st.session_state.player_order = "Going First"
 
 
@@ -199,16 +199,53 @@ def calculate_opponent_future_secondary_vp(current_round_0_indexed, opponent_use
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Calculate Current Round Globally (MOVED UP)
+# ─────────────────────────────────────────────────────────────────────────────
+calculated_cur_round_val = 0 
+for i_sb_round_global_cur in range(MAX_ROUNDS): # Renamed i_sb_round for clarity
+    round_data_global_cur = st.session_state.scoreboard_data_list[i_sb_round_global_cur] # Renamed round_data for clarity
+    user_played_this_round_global_cur = round_data_global_cur['s1'] > 0 or round_data_global_cur['s2'] > 0 or round_data_global_cur['used']
+    opponent_played_this_round_global_cur = round_data_global_cur['opp_s1'] > 0 or round_data_global_cur['opp_s2'] > 0 or round_data_global_cur['opp_used']
+
+    if st.session_state.player_order == "Going First":
+        if user_played_this_round_global_cur and opponent_played_this_round_global_cur: 
+            if i_sb_round_global_cur < MAX_ROUNDS - 1:
+                calculated_cur_round_val = i_sb_round_global_cur + 1
+            else: 
+                calculated_cur_round_val = MAX_ROUNDS -1 
+        else: 
+            calculated_cur_round_val = i_sb_round_global_cur 
+            break 
+    else: # Player is Going Second
+        if user_played_this_round_global_cur: 
+            if i_sb_round_global_cur < MAX_ROUNDS - 1:
+                calculated_cur_round_val = i_sb_round_global_cur + 1
+            else: 
+                calculated_cur_round_val = MAX_ROUNDS - 1
+        else: 
+            calculated_cur_round_val = i_sb_round_global_cur
+            break
+cur_round = min(calculated_cur_round_val, MAX_ROUNDS - 1) # Global cur_round (0-indexed)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Sidebar Settings
 # ─────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("General Settings")
 player_order_options = ["Going First", "Going Second"]
-st.session_state.player_order = st.sidebar.radio(
+# Get current index for radio button to ensure it reflects session state
+current_player_order_index = player_order_options.index(st.session_state.player_order) if st.session_state.player_order in player_order_options else 0
+
+selected_player_order = st.sidebar.radio(
     "Select Your Player Order:",
     options=player_order_options,
-    index=player_order_options.index(st.session_state.player_order), # Persist selection
-    key="player_order_radio"
+    index=current_player_order_index, 
+    key="player_order_radio_widget" # Use a distinct key for the widget itself
 )
+# Update session state only if the widget's value has changed, to prevent unnecessary reruns if a manual rerun is triggered elsewhere
+if selected_player_order != st.session_state.player_order:
+    st.session_state.player_order = selected_player_order
+    st.rerun() # Rerun if player order changes as it affects cur_round
 
 st.session_state.include_start_vp = st.sidebar.checkbox(
     "Include Starting VP (10 VP) in Totals", 
@@ -262,7 +299,6 @@ st.header("⚙️ Edit Mission Probabilities (Baseline)")
 with st.expander("Show/hide probability table"):
     updated_probs_edit = copy.deepcopy(st.session_state.PROB_EVENTS)
     
-    # cur_round is now globally calculated based on player_order before this section
     cur_round_for_edit_display = cur_round # Use the globally calculated cur_round
 
     editable_user_cards = {
@@ -311,7 +347,6 @@ with st.expander("Show/hide probability table"):
             if card_key in updated_probs_edit:
                  st.session_state.PROB_EVENTS[card_key] = updated_probs_edit[card_key]
         st.success("Baseline Probabilities updated for available cards!")
-        # No explicit st.rerun() here
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Live Scoreboard & Round Detection
@@ -330,33 +365,7 @@ for round_data_sb_init_opp in st.session_state.scoreboard_data_list:
 if current_opponent_scoreboard_used_cards_set != st.session_state.opponent_scoreboard_used_cards:
     st.session_state.opponent_scoreboard_used_cards = current_opponent_scoreboard_used_cards_set
 
-# UPDATED cur_round calculation based on player_order
-calculated_cur_round_val = 0 # Default to round 1 (0-indexed)
-for i_sb_round in range(MAX_ROUNDS):
-    round_data = st.session_state.scoreboard_data_list[i_sb_round]
-    user_played_this_round = round_data['s1'] > 0 or round_data['s2'] > 0 or round_data['used']
-    opponent_played_this_round = round_data['opp_s1'] > 0 or round_data['opp_s2'] > 0 or round_data['opp_used']
-
-    if st.session_state.player_order == "Going First":
-        if user_played_this_round and opponent_played_this_round: # Round fully complete
-            if i_sb_round < MAX_ROUNDS - 1:
-                calculated_cur_round_val = i_sb_round + 1
-            else: # Last round completed
-                calculated_cur_round_val = MAX_ROUNDS -1 
-        else: # Round not fully complete
-            calculated_cur_round_val = i_sb_round 
-            break 
-    else: # Player is Going Second
-        if user_played_this_round: # User (P2) completed their turn
-            if i_sb_round < MAX_ROUNDS - 1:
-                calculated_cur_round_val = i_sb_round + 1
-            else: # Last round completed
-                calculated_cur_round_val = MAX_ROUNDS - 1
-        else: # User (P2) has not played their turn in this round
-            calculated_cur_round_val = i_sb_round
-            break
-cur_round = min(calculated_cur_round_val, MAX_ROUNDS - 1) # Ensure it doesn't exceed max
-
+# cur_round is already calculated globally above
 
 total_s1, total_s2, total_p_raw = 0, 0, 0 
 opp_total_s1, opp_total_s2, opp_total_p_raw = 0, 0, 0 
@@ -742,8 +751,7 @@ st.divider()
 with st.expander("Edit Opponent's Mission Probabilities (Baseline)", expanded=False):
     updated_opponent_probs_edit = copy.deepcopy(st.session_state.OPPONENT_PROB_EVENTS)
     
-    # Use the globally calculated cur_round to determine past/future for opponent's editor
-    cur_round_for_opp_edit_display = cur_round 
+    cur_round_for_opp_edit_display = cur_round # Use the globally calculated cur_round
 
     editable_opponent_cards = {
         card_name: events for card_name, events in st.session_state.OPPONENT_PROB_EVENTS.items()
