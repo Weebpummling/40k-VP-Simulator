@@ -233,7 +233,6 @@ def mulligan_cards(cards_to_mulligan_list):
                 st.warning("T1 Mulligan: Limited non-restricted cards for redraw. Drawing from all available.")
                 pool_to_draw_from_mulligan = deck_for_redraw # Fallback to any available card
                 # A more specific warning if restricted cards are actually drawn could be added here too, similar to initial draw.
-                # For now, the above warning is a general indicator of the situation.
             else:
                 pool_to_draw_from_mulligan = t1_mulligan_pool
         else: # Not Turn 1 mulligan
@@ -391,7 +390,9 @@ def display_setup_screen():
                 value=st.session_state.get("reset_probs_on_new_game", True), key="reset_probs_on_new_game")
     if st.button("Start Game"):
         start_new_game() # Initialize game with selected settings
-        st.experimental_rerun() # Rerun to reflect game start
+        # Using st.rerun() instead of st.experimental_rerun() for modern Streamlit versions.
+        # This might help if the 'ax' error is specific to the experimental version.
+        st.rerun() 
 
 def display_scoreboard_and_projections():
     # Displays the current scoreboard and projected scores in the sidebar
@@ -433,7 +434,7 @@ def display_current_turn_interface():
     # Update if value changes; optional immediate rerun for scoreboard update
     if new_primary_score_for_turn != current_primary_score_for_turn:
         st.session_state.all_primary_vps[st.session_state.active_player_type][current_game_turn_idx] = new_primary_score_for_turn
-        # st.experimental_rerun() # Uncomment for immediate scoreboard update on primary VP change
+        # st.rerun() # Uncomment for immediate scoreboard update on primary VP change
 
     st.markdown("---") # Separator
 
@@ -453,7 +454,7 @@ def display_current_turn_interface():
                          key=f"random_draw_button_{st.session_state.active_player_type}", 
                          disabled=(num_cards_can_draw == 0)): # Disable if no cards to draw
                 draw_initial_cards_for_player(st.session_state.active_player_type, num_cards=num_cards_can_draw)
-                st.experimental_rerun() # Rerun to show drawn cards
+                st.rerun() # Rerun to show drawn cards
         else: # Manual Selection
             if not current_deck_available: st.warning("No cards left in deck to select.")
             else:
@@ -466,7 +467,7 @@ def display_current_turn_interface():
                     # Validate selection: must select at least 1 and no more than allowed
                     if 0 < len(manually_selected_cards) <= num_can_select_manual:
                          manually_select_cards_for_player(manually_selected_cards)
-                         st.experimental_rerun() # Rerun to show selected cards
+                         st.rerun() # Rerun to show selected cards
                     else: st.warning(f"Please select between 1 and {num_can_select_manual} cards.")
         return # Stop here if in card selection phase; wait for user action
 
@@ -491,7 +492,7 @@ def display_current_turn_interface():
         if st.button("Confirm Mulligan / Keep Initial Hand", key=f"mulligan_confirm_button_{st.session_state.active_player_type}"):
             if cards_selected_for_mulligan: mulligan_cards(cards_selected_for_mulligan) # Perform mulligan
             # If no cards selected for mulligan, current_player_final_hand remains as current_player_drawn_cards
-            st.experimental_rerun() # Rerun to display the final hand after mulligan decision
+            st.rerun() # Rerun to display the final hand after mulligan decision
     else: # Should not happen if turn_segment_in_progress is true without cards, but good fallback
         st.write("No cards were drawn or selected for this turn segment.")
 
@@ -534,7 +535,7 @@ def display_current_turn_interface():
     if st.button(f"End {active_player_name_full} Actions & Log Turn", 
                  key=f"log_turn_button_{st.session_state.active_player_type}"):
         log_player_turn() # Log data and advance turn
-        st.experimental_rerun() # Rerun to reflect next player/turn
+        st.rerun() # Rerun to reflect next player/turn
 
 def display_probability_settings():
     # UI for adjusting card scoring probabilities (per round) and CSV import/export
@@ -572,7 +573,7 @@ def display_probability_settings():
                 st.session_state.probabilities["user"] = new_parsed_probs # Update user probabilities
                 # Optionally, could also update opponent probabilities here if they should mirror user's after upload
                 # st.session_state.probabilities["opponent"] = copy.deepcopy(new_parsed_probs) 
-                st.success("User probabilities successfully uploaded from CSV!"); st.experimental_rerun()
+                st.success("User probabilities successfully uploaded from CSV!"); st.rerun()
             except Exception as e_csv: st.error(f"Error processing CSV file: {e_csv}")
 
         # Display sliders for adjusting probabilities for user and opponent
@@ -613,10 +614,10 @@ def display_all_primary_vp_input():
                 # Update if value changes
                 if new_vp_val != current_vp_val: 
                     st.session_state.all_primary_vps[player_type_vp_edit][turn_idx_vp_edit] = new_vp_val
-                    # Optional: st.experimental_rerun() for immediate scoreboard update
+                    # Optional: st.rerun() for immediate scoreboard update
         # Button to manually refresh scores after edits if auto-rerun is not used on each input change
         if st.button("Refresh Scores After Primary VP Edits", key="refresh_primary_vp_edits_button"): 
-            st.experimental_rerun()
+            st.rerun()
 
 def display_edit_past_scores(): 
     # UI for editing details of past logged turns (secondary card VPs and disposition)
@@ -655,7 +656,7 @@ def display_edit_past_scores():
         
         # Button to refresh scores after making edits in the log
         if st.button("Refresh Scores After Log Edits", key="refresh_secondary_log_edits_button"): 
-            st.experimental_rerun()
+            st.rerun()
 
 # --- Main Application Flow ---
 def main():
@@ -677,7 +678,7 @@ def main():
             if st.button("Start New Game", key="game_over_start_new_game_button"): # Option to start new game
                 st.session_state.game_started = False # Reset game started flag
                 initialize_session_state() # Re-initialize state for a fresh game
-                st.experimental_rerun()
+                st.rerun()
         else: # Game is ongoing
             display_current_turn_interface() # Display main interface for current player's turn
 
@@ -691,7 +692,7 @@ def main():
         if st.sidebar.button("Start New Game (Resets Current Progress)", key="sidebar_start_new_game_button"):
             st.session_state.game_started = False # Reset flag
             initialize_session_state() # Re-initialize state
-            st.experimental_rerun()
+            st.rerun()
 
 if __name__ == "__main__":
     main() # Run the main application function
