@@ -30,7 +30,7 @@ DEFAULT_PROBS = {
     "Cull the Horde":       [(5, [0, 0, 0, 10, 30])],
     "Overwhelming Force":   [(3, [10, 80, 80, 80, 80]), (2, [0, 30, 80, 80, 80])],
     "Extend Battlelines":   [(5, [100, 100, 100, 100, 100])],
-    "Recover Assets":       [(3, [100, 80, 80, 50, 50]), (3, [0, 0, 30, 30, 30])],
+    "Recover Assets":       [(3, [100, 80, 80, 50, 50]), (3, [0, 0, 30, 30, 30])], 
     "Engage on All Fronts": [(2, [80, 30, 50, 80, 80]), (2, [0, 30, 30, 50, 50])], 
     "Area Denial":          [(2, [100, 80, 80, 80, 80]), (3, [80, 80, 80, 80, 80])],
     "Secure No Man's Land": [(2, [100, 100, 100, 100, 100]), (3, [80, 80, 80, 80, 80])],
@@ -46,10 +46,13 @@ COL_EVENT_ROUND_PROB_TPL = "E{}_r{}"
 # ─────────────────────────────────────────────────────────────────────────────
 # Session State Initialization
 # ─────────────────────────────────────────────────────────────────────────────
-if 'PROB_EVENTS' not in st.session_state: # User's probabilities
+if 'PROB_EVENTS' not in st.session_state: 
     st.session_state.PROB_EVENTS = copy.deepcopy(DEFAULT_PROBS)
-if 'OPPONENT_PROB_EVENTS' not in st.session_state: # Opponent's probabilities
+if 'OPPONENT_PROB_EVENTS' not in st.session_state: 
     st.session_state.OPPONENT_PROB_EVENTS = copy.deepcopy(DEFAULT_PROBS)
+
+if 'player_order' not in st.session_state: # New state for player order
+    st.session_state.player_order = "Going First"
 
 
 default_round_data = {
@@ -74,9 +77,9 @@ else:
 
 if 'active_current' not in st.session_state:
     st.session_state.active_current = []
-if 'manually_removed_cards' not in st.session_state: # User's manually removed
+if 'manually_removed_cards' not in st.session_state: 
     st.session_state.manually_removed_cards = set() 
-if 'opponent_manually_removed_cards' not in st.session_state: # Opponent's manually removed
+if 'opponent_manually_removed_cards' not in st.session_state: 
     st.session_state.opponent_manually_removed_cards = set()
 
 if 'scoreboard_used_cards' not in st.session_state: 
@@ -150,9 +153,8 @@ def calculate_opponent_future_secondary_vp(current_round_0_indexed, opponent_use
     Considers opponent's manually removed cards.
     """
     projected_vp_for_future_rounds = 0.0 
-    # Combine scoreboard used and manually removed for the opponent's total unavailable pool for this projection
     combined_opponent_unavailable_cards = set(opponent_used_cards_set).union(opponent_manually_removed_set)
-    temp_opponent_unavailable_cards_for_sim = set(combined_opponent_unavailable_cards) # Use a copy for this simulation
+    temp_opponent_unavailable_cards_for_sim = set(combined_opponent_unavailable_cards) 
 
 
     for r_idx in range(current_round_0_indexed + 1, MAX_ROUNDS):
@@ -200,8 +202,16 @@ def calculate_opponent_future_secondary_vp(current_round_0_indexed, opponent_use
 # Sidebar Settings
 # ─────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("General Settings")
+player_order_options = ["Going First", "Going Second"]
+st.session_state.player_order = st.sidebar.radio(
+    "Select Your Player Order:",
+    options=player_order_options,
+    index=player_order_options.index(st.session_state.player_order), # Persist selection
+    key="player_order_radio"
+)
+
 st.session_state.include_start_vp = st.sidebar.checkbox(
-    "Include Painting VP (10 VP) in Totals", 
+    "Include Starting VP (10 VP) in Totals", 
     value=st.session_state.include_start_vp,
     key="include_start_vp_checkbox"
 )
@@ -252,13 +262,8 @@ st.header("⚙️ Edit Mission Probabilities (Baseline)")
 with st.expander("Show/hide probability table"):
     updated_probs_edit = copy.deepcopy(st.session_state.PROB_EVENTS)
     
-    temp_calculated_cur_round_for_edit = 0
-    for i_edit_cur_round, round_data_edit_cur_round in enumerate(st.session_state.scoreboard_data_list):
-        if round_data_edit_cur_round['s1'] > 0 or round_data_edit_cur_round['s2'] > 0 or round_data_edit_cur_round['used']:
-            if i_edit_cur_round < MAX_ROUNDS - 1: temp_calculated_cur_round_for_edit = i_edit_cur_round + 1
-            else: temp_calculated_cur_round_for_edit = MAX_ROUNDS - 1
-        else: break
-    cur_round_for_edit_display = temp_calculated_cur_round_for_edit
+    # cur_round is now globally calculated based on player_order before this section
+    cur_round_for_edit_display = cur_round # Use the globally calculated cur_round
 
     editable_user_cards = {
         card_name: events for card_name, events in st.session_state.PROB_EVENTS.items()
@@ -306,6 +311,7 @@ with st.expander("Show/hide probability table"):
             if card_key in updated_probs_edit:
                  st.session_state.PROB_EVENTS[card_key] = updated_probs_edit[card_key]
         st.success("Baseline Probabilities updated for available cards!")
+        # No explicit st.rerun() here
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Live Scoreboard & Round Detection
@@ -324,17 +330,33 @@ for round_data_sb_init_opp in st.session_state.scoreboard_data_list:
 if current_opponent_scoreboard_used_cards_set != st.session_state.opponent_scoreboard_used_cards:
     st.session_state.opponent_scoreboard_used_cards = current_opponent_scoreboard_used_cards_set
 
+# UPDATED cur_round calculation based on player_order
+calculated_cur_round_val = 0 # Default to round 1 (0-indexed)
+for i_sb_round in range(MAX_ROUNDS):
+    round_data = st.session_state.scoreboard_data_list[i_sb_round]
+    user_played_this_round = round_data['s1'] > 0 or round_data['s2'] > 0 or round_data['used']
+    opponent_played_this_round = round_data['opp_s1'] > 0 or round_data['opp_s2'] > 0 or round_data['opp_used']
 
-calculated_cur_round = 0 
-for i_sb_round, round_data_sb_cur in enumerate(st.session_state.scoreboard_data_list): 
-    if round_data_sb_cur['s1'] > 0 or round_data_sb_cur['s2'] > 0 or round_data_sb_cur['used']:
-        if i_sb_round < MAX_ROUNDS - 1: 
-            calculated_cur_round = i_sb_round + 1
-        else: 
-            calculated_cur_round = MAX_ROUNDS - 1 
-    else: 
-        break 
-cur_round = calculated_cur_round 
+    if st.session_state.player_order == "Going First":
+        if user_played_this_round and opponent_played_this_round: # Round fully complete
+            if i_sb_round < MAX_ROUNDS - 1:
+                calculated_cur_round_val = i_sb_round + 1
+            else: # Last round completed
+                calculated_cur_round_val = MAX_ROUNDS -1 
+        else: # Round not fully complete
+            calculated_cur_round_val = i_sb_round 
+            break 
+    else: # Player is Going Second
+        if user_played_this_round: # User (P2) completed their turn
+            if i_sb_round < MAX_ROUNDS - 1:
+                calculated_cur_round_val = i_sb_round + 1
+            else: # Last round completed
+                calculated_cur_round_val = MAX_ROUNDS - 1
+        else: # User (P2) has not played their turn in this round
+            calculated_cur_round_val = i_sb_round
+            break
+cur_round = min(calculated_cur_round_val, MAX_ROUNDS - 1) # Ensure it doesn't exceed max
+
 
 total_s1, total_s2, total_p_raw = 0, 0, 0 
 opp_total_s1, opp_total_s2, opp_total_p_raw = 0, 0, 0 
@@ -392,7 +414,7 @@ opp_pri_total = min(opp_total_p_raw, MAX_PRIMARY_SCORE)
 st.session_state.opponent_total_sim_future_vp = calculate_opponent_future_secondary_vp(
     cur_round, 
     st.session_state.opponent_scoreboard_used_cards, 
-    st.session_state.opponent_manually_removed_cards, # Pass opponent's manually removed cards
+    st.session_state.opponent_manually_removed_cards, 
     st.session_state.OPPONENT_PROB_EVENTS, 
     opp_sec_total
 )
@@ -426,7 +448,7 @@ st.sidebar.write("**Your Available Draw Pool Size:** " + str(len(AVAILABLE_DRAW_
 with st.sidebar.expander("View Your Available Draw Pool"): st.write(", ".join(sorted(AVAILABLE_DRAW_POOL)) if AVAILABLE_DRAW_POOL else "*Empty*")
 st.sidebar.divider()
 
-# Opponent Card Pool Management (NEW)
+# Opponent Card Pool Management 
 st.sidebar.header("Card Deck Management (Opponent's Deck)")
 st.sidebar.write("**Opponent's Scoreboard Used Cards:**")
 if st.session_state.opponent_scoreboard_used_cards: st.sidebar.write(", ".join(sorted(list(st.session_state.opponent_scoreboard_used_cards))))
@@ -720,15 +742,9 @@ st.divider()
 with st.expander("Edit Opponent's Mission Probabilities (Baseline)", expanded=False):
     updated_opponent_probs_edit = copy.deepcopy(st.session_state.OPPONENT_PROB_EVENTS)
     
-    temp_calculated_cur_round_for_opp_edit = 0
-    for i_opp_edit_cur_round, round_data_opp_edit_cur_round in enumerate(st.session_state.scoreboard_data_list):
-        if round_data_opp_edit_cur_round['s1'] > 0 or round_data_opp_edit_cur_round['s2'] > 0 or round_data_opp_edit_cur_round['used']:
-            if i_opp_edit_cur_round < MAX_ROUNDS - 1: temp_calculated_cur_round_for_opp_edit = i_opp_edit_cur_round + 1
-            else: temp_calculated_cur_round_for_opp_edit = MAX_ROUNDS - 1
-        else: break
-    cur_round_for_opp_edit_display = temp_calculated_cur_round_for_opp_edit
+    # Use the globally calculated cur_round to determine past/future for opponent's editor
+    cur_round_for_opp_edit_display = cur_round 
 
-    # Filter cards to only show those not used by the opponent or manually removed from their pool
     editable_opponent_cards = {
         card_name: events for card_name, events in st.session_state.OPPONENT_PROB_EVENTS.items()
         if card_name not in st.session_state.opponent_scoreboard_used_cards and \
@@ -737,7 +753,7 @@ with st.expander("Edit Opponent's Mission Probabilities (Baseline)", expanded=Fa
     if not editable_opponent_cards:
         st.info("All cards appear to have been used by the opponent or manually removed from their pool. No probabilities to edit for their deck.")
 
-    for card_opp, evs_opp in editable_opponent_cards.items(): # Iterate over filtered cards
+    for card_opp, evs_opp in editable_opponent_cards.items(): 
         st.markdown(f"**{card_opp} (Opponent)**"); new_evs_for_card_opp = []
         for event_idx_opp, (pts_opp, prs_list_opp) in enumerate(evs_opp, start=1):
             num_future_rounds_opp = MAX_ROUNDS - cur_round_for_opp_edit_display
@@ -767,10 +783,9 @@ with st.expander("Edit Opponent's Mission Probabilities (Baseline)", expanded=Fa
                     col_idx_offset_opp += 1
             
             new_evs_for_card_opp.append((pts_opp, new_prs_for_event_opp))
-        updated_opponent_probs_edit[card_opp] = new_evs_for_card_opp # Update the copy
+        updated_opponent_probs_edit[card_opp] = new_evs_for_card_opp 
         
     if st.button("Apply Opponent's Baseline Probability Changes"):
-        # Only update probabilities for cards that were displayed
         for card_key_opp in editable_opponent_cards.keys():
             if card_key_opp in updated_opponent_probs_edit:
                 st.session_state.OPPONENT_PROB_EVENTS[card_key_opp] = updated_opponent_probs_edit[card_key_opp]
@@ -783,5 +798,5 @@ with st.expander("Edit Opponent's Mission Probabilities (Baseline)", expanded=Fa
             st.session_state.OPPONENT_PROB_EVENTS, 
             opp_sec_total
         )
-        # No explicit st.rerun() here; button click causes a natural rerun.
+        # No explicit st.rerun() here
 
