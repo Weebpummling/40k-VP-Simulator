@@ -59,6 +59,7 @@ default_round_data = {
 if 'scoreboard_data_list' not in st.session_state:
     st.session_state.scoreboard_data_list = [copy.deepcopy(default_round_data) for _ in range(MAX_ROUNDS)]
 else:
+    # Ensure existing list items have all necessary keys
     for i in range(len(st.session_state.scoreboard_data_list)):
         for key, default_value in default_round_data.items():
             if isinstance(default_value, list):
@@ -66,6 +67,7 @@ else:
             else:
                  st.session_state.scoreboard_data_list[i].setdefault(key, default_value)
     
+    # Ensure the list has exactly MAX_ROUNDS items
     while len(st.session_state.scoreboard_data_list) < MAX_ROUNDS:
         st.session_state.scoreboard_data_list.append(copy.deepcopy(default_round_data))
     if len(st.session_state.scoreboard_data_list) > MAX_ROUNDS:
@@ -141,46 +143,63 @@ def calculate_hand_ev_for_round(hand, round_idx, prob_events_data, overrides=Non
     return ev
 
 def calculate_opponent_future_secondary_vp(current_round_0_indexed, opponent_used_cards_set, opponent_prob_events_data, current_opponent_sec_score):
-    """Calculates a projected future secondary VP for the opponent, respecting 40 VP cap."""
-    projected_vp_raw = 0
-    temp_opponent_used_cards = set(opponent_used_cards_set) 
+    """
+    Calculates a projected future secondary VP for the opponent.
+    Assumes opponent picks the top 2 EV cards available to them each future round.
+    Respects the MAX_SECONDARY_SCORE (40 VP) cap.
+    """
+    projected_vp_raw = 0.0 # Use float for EV calculations
+    temp_opponent_used_cards = set(opponent_used_cards_set) # Use a copy for this calculation
 
+    # Iterate through future rounds
     for r_idx in range(current_round_0_indexed + 1, MAX_ROUNDS):
+        # If opponent has already reached or exceeded max secondary score, no more can be scored
         if current_opponent_sec_score + projected_vp_raw >= MAX_SECONDARY_SCORE:
-            break # Stop if already at or over cap
+            break 
 
+        # Determine cards available to the opponent for this specific future round
         available_cards_for_opponent_this_round = [
             c for c in CARD_LIST if c not in temp_opponent_used_cards
         ]
         
         if not available_cards_for_opponent_this_round:
-            continue
+            continue # No cards left for opponent to draw
 
+        # Calculate EV for each available card for this round
         card_evs_this_round = []
         for card in available_cards_for_opponent_this_round:
             ev = calculate_card_ev_for_round(card, r_idx, opponent_prob_events_data) # Use opponent's probs
             card_evs_this_round.append({"name": card, "ev": ev})
         
+        # Sort cards by EV in descending order to find the best ones
         card_evs_this_round.sort(key=lambda x: x["ev"], reverse=True)
         
-        round_score_opponent = 0
+        round_score_opponent_this_round = 0.0
         cards_chosen_this_round_opponent = []
+        # Opponent picks up to 2 cards
         for i in range(min(2, len(card_evs_this_round))):
             chosen_card = card_evs_this_round[i]
-            # Ensure adding this EV doesn't exceed the cap when combined with already scored and previously projected VPs for this function call
-            if current_opponent_sec_score + projected_vp_raw + chosen_card["ev"] <= MAX_SECONDARY_SCORE:
-                round_score_opponent += chosen_card["ev"]
-            else: # Add only enough to reach the cap
-                round_score_opponent += max(0, MAX_SECONDARY_SCORE - (current_opponent_sec_score + projected_vp_raw))
-                cards_chosen_this_round_opponent.append(chosen_card["name"]) # Still "uses" the card
-                projected_vp_raw += round_score_opponent
-                break # Cap reached for this round's picks
             
+            # Calculate how much VP can be added from this card without exceeding the overall secondary cap
+            potential_score_from_card = chosen_card["ev"]
+            remaining_cap_space = MAX_SECONDARY_SCORE - (current_opponent_sec_score + projected_vp_raw)
+            
+            score_to_add_this_card = min(potential_score_from_card, remaining_cap_space)
+            
+            if score_to_add_this_card <= 0: # No more space under the cap
+                break 
+
+            round_score_opponent_this_round += score_to_add_this_card
             cards_chosen_this_round_opponent.append(chosen_card["name"])
             
-        projected_vp_raw += round_score_opponent
-        temp_opponent_used_cards.update(cards_chosen_this_round_opponent) 
+            # Update projected_vp_raw immediately to reflect the score added towards the cap
+            projected_vp_raw += score_to_add_this_card 
+            if current_opponent_sec_score + projected_vp_raw >= MAX_SECONDARY_SCORE:
+                break # Stop if cap reached with this card
+            
+        temp_opponent_used_cards.update(cards_chosen_this_round_opponent) # Mark chosen cards as "used" for subsequent future rounds in this projection
 
+    # Final projected VP cannot make the total secondary score exceed MAX_SECONDARY_SCORE
     return min(projected_vp_raw, MAX_SECONDARY_SCORE - current_opponent_sec_score)
 
 
@@ -189,7 +208,7 @@ def calculate_opponent_future_secondary_vp(current_round_0_indexed, opponent_use
 # ─────────────────────────────────────────────────────────────────────────────
 st.sidebar.header("General Settings")
 st.session_state.include_start_vp = st.sidebar.checkbox(
-    "Include Painting VP (10 VP) in Totals", 
+    "Include Starting VP (10 VP) in Totals", 
     value=st.session_state.include_start_vp,
     key="include_start_vp_checkbox"
 )
@@ -315,8 +334,8 @@ for i_sb_round, round_data_sb_cur in enumerate(st.session_state.scoreboard_data_
         break 
 cur_round = calculated_cur_round 
 
-total_s1, total_s2, total_p_raw = 0, 0, 0 # Renamed total_p to total_p_raw
-opp_total_s1, opp_total_s2, opp_total_p_raw = 0, 0, 0 # Renamed opp_total_p
+total_s1, total_s2, total_p_raw = 0, 0, 0 
+opp_total_s1, opp_total_s2, opp_total_p_raw = 0, 0, 0 
 
 for i_sb_form in range(MAX_ROUNDS): 
     with st.container(border=True): 
@@ -363,7 +382,6 @@ for i_sb_form in range(MAX_ROUNDS):
 
 st.write(f"**Current Game Round (for active play):** {cur_round+1} (Internal 0-indexed: {cur_round})")
 
-# Apply VP Caps
 sec_total = min(total_s1 + total_s2, MAX_SECONDARY_SCORE)
 pri_total = min(total_p_raw, MAX_PRIMARY_SCORE)
 opp_sec_total = min(opp_total_s1 + opp_total_s2, MAX_SECONDARY_SCORE)
@@ -485,6 +503,13 @@ else:
     st.write("Select your active missions to see EV and discard recommendations for the current round.")
     st.session_state.current_active_hand_ev = 0.0 
 
+# Display Your Available Draw Pool in main UI
+with st.expander("View Your Available Draw Pool (Main UI)", expanded=False):
+    st.write(f"**Size:** {len(AVAILABLE_DRAW_POOL)}")
+    st.write(", ".join(sorted(AVAILABLE_DRAW_POOL)) if AVAILABLE_DRAW_POOL else "*Empty*")
+st.divider()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # VP Summary & Projections
 # ─────────────────────────────────────────────────────────────────────────────
@@ -499,8 +524,8 @@ if st.session_state.get('include_start_vp', True):
     user_current_grand_total_calc += START_VP
     user_start_vp_label = " (incl. Start VP)"
 
-user_summary_cols[0].metric("Your Scored Secondary VP", f"{int(sec_total)} VP")
-user_summary_cols[1].metric("Your Entered Primary VP", f"{int(pri_total)} VP") 
+user_summary_cols[0].metric("Your Scored Secondary VP", f"{int(sec_total)} VP", help=f"Max {MAX_SECONDARY_SCORE} VP")
+user_summary_cols[1].metric("Your Entered Primary VP", f"{int(pri_total)} VP", help=f"Max {MAX_PRIMARY_SCORE} VP") 
 user_summary_cols[2].metric(f"Your Current Grand Total{user_start_vp_label}", f"{int(user_current_grand_total_calc)} VP")
 
 active_hand_ev_display_val = st.session_state.get('current_active_hand_ev', 0.0)
@@ -513,13 +538,13 @@ sim_has_run_indicator = 'run_sim_button_main' in st.session_state and st.session
 
 if user_sim_future_vp_val > 0 or sim_has_run_indicator : 
     st.metric("Your Simulated Future Secondary VP", f"{user_sim_future_vp_val:.2f} VP",
-              help="Average VPs expected from your secondary missions in future rounds, based on the last simulation run. This does NOT include the EV of your current active hand. Capped at 40 total secondary VPs.")
+              help=f"Average VPs expected from your secondary missions in future rounds, based on the last simulation run. This does NOT include the EV of your current active hand. Total secondary VPs capped at {MAX_SECONDARY_SCORE}.")
     
-    user_projected_total_vp_calc = sec_total + pri_total + user_sim_future_vp_val # sec_total and pri_total are already capped
+    user_projected_total_vp_calc = sec_total + pri_total + user_sim_future_vp_val 
     if st.session_state.get('include_start_vp', True): user_projected_total_vp_calc += START_VP
     
     st.metric(f"Your Projected Game End Total VP{user_start_vp_label}", f"{user_projected_total_vp_calc:.2f} VP",
-              help="Sum of your current VPs and your simulated future secondary VPs. Primary capped at 50, Secondary at 40.")
+              help=f"Sum of your current VPs and your simulated future secondary VPs. Primary capped at {MAX_PRIMARY_SCORE}, Secondary at {MAX_SECONDARY_SCORE}.")
 else:
     st.info("Run a 'Future Rounds Simulation' (in sidebar) to see your projected VPs.")
 
@@ -534,14 +559,14 @@ if st.session_state.get('include_start_vp', True):
     opp_start_vp_label = " (incl. Start VP)"
 
 st.metric(f"Opponent's Current Grand Total{opp_start_vp_label}", f"{int(opp_current_grand_total_calc)} VP",
-          help="Sum of opponent's entered secondary and primary VPs, plus starting VP if selected. Primary capped at 50, Secondary at 40.")
+          help=f"Sum of opponent's entered secondary and primary VPs, plus starting VP if selected. Primary capped at {MAX_PRIMARY_SCORE}, Secondary at {MAX_SECONDARY_SCORE}.")
 
 opp_sim_future_vp_val = st.session_state.get('opponent_total_sim_future_vp', 0.0)
-opp_projected_total_vp_calc = opp_sec_total + opp_pri_total + opp_sim_future_vp_val # opp_sec_total and opp_pri_total are already capped
+opp_projected_total_vp_calc = opp_sec_total + opp_pri_total + opp_sim_future_vp_val 
 if st.session_state.get('include_start_vp', True): opp_projected_total_vp_calc += START_VP
 
 st.metric(f"Opponent's Projected Game End Total VP{opp_start_vp_label}", f"{opp_projected_total_vp_calc:.2f} VP",
-            help="Sum of opponent's current VPs and their projected future secondary VPs (based on optimal play). Primary capped at 50, Secondary at 40.")
+            help=f"Sum of opponent's current VPs and their projected future secondary VPs (based on optimal play using their probabilities). Primary capped at {MAX_PRIMARY_SCORE}, Secondary at {MAX_SECONDARY_SCORE}.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -551,15 +576,16 @@ def simulate_future(initial_deck_for_sim, current_app_round_sim, allow_discard_i
     """Simulates future rounds for the user: draw 2, optional discard/redraw (optimal for round), score. Respects 40 VP Secondary Cap."""
     round_total_vps_sim = {r_sim_loop: 0.0 for r_sim_loop in range(current_app_round_sim + 1, MAX_ROUNDS)} 
     
-    total_future_vp_across_trials = 0
+    total_future_vp_across_trials = 0.0 # Initialize as float
 
     for _ in range(num_trials):
         trial_deck_sim = list(initial_deck_for_sim); random.shuffle(trial_deck_sim) 
-        trial_future_secondary_vp = 0 # VP scored in this specific trial for future rounds
+        trial_future_secondary_vp = 0.0 # VP scored in this specific trial for future rounds
 
         for r_idx_sim, r_val_sim in enumerate(range(current_app_round_sim + 1, MAX_ROUNDS), start=current_app_round_sim + 1): 
+            # Check if the cap for secondaries (for this trial) has already been met by previous rounds in this trial
             if current_user_sec_score + trial_future_secondary_vp >= MAX_SECONDARY_SCORE:
-                break # Stop this trial's future rounds if cap already met/exceeded by prior rounds in this trial
+                break 
 
             current_sim_hand_trial = []; 
             if len(trial_deck_sim) >= 2: current_sim_hand_trial = [trial_deck_sim.pop(0), trial_deck_sim.pop(0)]
@@ -583,31 +609,25 @@ def simulate_future(initial_deck_for_sim, current_app_round_sim, allow_discard_i
                     final_hand_for_scoring_this_round_sim = [c for c in current_sim_hand_trial if c != card_to_discard_for_sim_trial]
                     final_hand_for_scoring_this_round_sim.append(trial_deck_sim.pop(0))
             
-            round_score_for_trial_sim_this_round = 0 
+            round_score_for_trial_sim_this_round_raw = 0.0 # Raw score for this round before capping within the trial
             for card_name_in_scoring_hand_sim in final_hand_for_scoring_this_round_sim: 
                 if card_name_in_scoring_hand_sim in prob_events_data_sim:
                     for pts, prs_list in prob_events_data_sim[card_name_in_scoring_hand_sim]:
                         if 0 <= r_val_sim < len(prs_list) and random.random() < prs_list[r_val_sim] / 100.0: 
-                            # Check cap before adding
-                            if current_user_sec_score + trial_future_secondary_vp + pts <= MAX_SECONDARY_SCORE:
-                                round_score_for_trial_sim_this_round += pts
-                            else:
-                                round_score_for_trial_sim_this_round += max(0, MAX_SECONDARY_SCORE - (current_user_sec_score + trial_future_secondary_vp))
-                                trial_future_secondary_vp += round_score_for_trial_sim_this_round
-                                break # Stop adding points from this card if cap hit
-                    if current_user_sec_score + trial_future_secondary_vp >= MAX_SECONDARY_SCORE:
-                        break # Stop adding points from other cards if cap hit
+                            round_score_for_trial_sim_this_round_raw += pts
             
-            trial_future_secondary_vp += round_score_for_trial_sim_this_round
-            # Accumulate per-round average for display, but total is capped
-            round_total_vps_sim[r_val_sim] += round_score_for_trial_sim_this_round # This is for per-round display, not the final capped total
+            # Determine how much of this round's score can be added without exceeding the cap
+            remaining_cap_space_for_trial = MAX_SECONDARY_SCORE - (current_user_sec_score + trial_future_secondary_vp)
+            score_to_add_this_round = min(round_score_for_trial_sim_this_round_raw, remaining_cap_space_for_trial)
+            
+            trial_future_secondary_vp += score_to_add_this_round
+            round_total_vps_sim[r_val_sim] += score_to_add_this_round # Accumulate for per-round average display
 
-        total_future_vp_across_trials += min(trial_future_secondary_vp, MAX_SECONDARY_SCORE - current_user_sec_score)
+        total_future_vp_across_trials += trial_future_secondary_vp # Add the capped total for this trial
 
 
-    avg_total_future_vp = total_future_vp_across_trials / num_trials
-    # For per-round display (not strictly capped for this display, but sum will be)
-    avg_vps_per_round_display = {r_avg: total_vp / num_trials for r_avg, total_vp in round_total_vps_sim.items()} 
+    avg_total_future_vp = total_future_vp_across_trials / num_trials if num_trials > 0 else 0.0
+    avg_vps_per_round_display = {r_avg: total_vp / num_trials if num_trials > 0 else 0.0 for r_avg, total_vp in round_total_vps_sim.items()} 
     
     return avg_total_future_vp, avg_vps_per_round_display
 
@@ -623,14 +643,13 @@ if cur_round < MAX_ROUNDS - 1:
              st.session_state.total_sim_future_vp = 0.0 
         else:
             with st.spinner(f"Simulating {n_trials_sim_widget} trials for your future rounds..."):
-                # Pass current user secondary score to the simulation for capping
                 avg_total_future_vp_result, avg_vps_per_round_display_result = simulate_future(
                     list(AVAILABLE_DRAW_POOL), 
                     cur_round, 
                     allow_disc_sim_widget, 
                     n_trials_sim_widget, 
                     st.session_state.PROB_EVENTS,
-                    sec_total # User's current secondary score
+                    sec_total 
                 )
             
             st.session_state.total_sim_future_vp = avg_total_future_vp_result
@@ -652,16 +671,14 @@ else:
     st.sidebar.info("Your simulation available only before the last round.")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Edit Opponent's Probabilities (NEW SECTION - Minimized by default)
+# Edit Opponent's Probabilities 
 # ─────────────────────────────────────────────────────────────────────────────
 st.divider()
 with st.expander("Edit Opponent's Mission Probabilities (Baseline)", expanded=False):
     updated_opponent_probs_edit = copy.deepcopy(st.session_state.OPPONENT_PROB_EVENTS)
     
-    # Use the same cur_round_for_edit_display as the user's section for consistency
     temp_calculated_cur_round_for_opp_edit = 0
     for i_opp_edit_cur_round, round_data_opp_edit_cur_round in enumerate(st.session_state.scoreboard_data_list):
-        # Based on user's progress to determine "past" rounds for opponent's probability editing
         if round_data_opp_edit_cur_round['s1'] > 0 or round_data_opp_edit_cur_round['s2'] > 0 or round_data_opp_edit_cur_round['used']:
             if i_opp_edit_cur_round < MAX_ROUNDS - 1: temp_calculated_cur_round_for_opp_edit = i_opp_edit_cur_round + 1
             else: temp_calculated_cur_round_for_opp_edit = MAX_ROUNDS - 1
@@ -703,7 +720,6 @@ with st.expander("Edit Opponent's Mission Probabilities (Baseline)", expanded=Fa
     if st.button("Apply Opponent's Baseline Probability Changes"):
         st.session_state.OPPONENT_PROB_EVENTS = updated_opponent_probs_edit
         st.success("Opponent's Baseline Probabilities updated!")
-        # Recalculate opponent's future VP based on new probabilities
         st.session_state.opponent_total_sim_future_vp = calculate_opponent_future_secondary_vp(
             cur_round, st.session_state.opponent_scoreboard_used_cards, st.session_state.OPPONENT_PROB_EVENTS, opp_sec_total
         )
